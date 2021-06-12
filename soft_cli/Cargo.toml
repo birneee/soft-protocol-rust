@@ -1,0 +1,7 @@
+[package]
+name = "soft_cli"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+soft_lib = { path = "../soft_lib" }

@@ -1,0 +1,8 @@
+# "robust-file-transfer-protocol"
+# version = "0.1.0"
+# edition = "2021"
+
+# this now doesn't have a [package] or [dependencies] sections
+
+[workspace]
+members = ["soft_lib", "soft_cli", "soft_server"]
