@@ -1,7 +1,8 @@
 [package]
-name = "soft_cli"
+name = "soft_shared_lib"
 version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-soft_lib = { path = "../soft_lib" }
+sha2 = "0.9.5"
+hex-literal = "0.3.1"
