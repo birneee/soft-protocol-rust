@@ -1,54 +1,45 @@
-use sha2::{Sha256, Digest};
-use std::io::prelude::*;
-use time::PreciseTime;
-use byteorder::{BigEndian, ReadBytesExt};
-
-/*  Base Packet structures, 
+/*  Base Packet structures,
     Can be split into more packets as we define them.
 */
 
+use crate::constants::SOFT_PROTOCOL_VERSION;
+
 pub enum PacketType {
-    FileRequestPacket,
-    AcceptFileTransferPacket,
-    DataPacket,
-    DataAckPacket,
-    ErrorPacket
+    FileRequestPacket = 0,
+    AcceptFileTransferPacket = 1,
+    DataPacket = 2,
+    DataAckPacket = 3,
+    ErrorPacket = 4
 }
 
-fn get_packet_id(packet_type: PacketType) -> u8 {
-    match packet_type {
-        PacketType::FileRequestPacket => 0,
-        PacketType::AcceptFileTransferPacket => 1,
-        PacketType::DataPacket => 2,
-        PacketType::DataAckPacket => 3,
-        PacketType::ErrorPacket => 4
-    }
+fn get_packet_type_code(packet_type: PacketType) -> u8 {
+    packet_type as u8
  }
  
 pub struct Packet {
     version: u8,
-    packet_id: u8,
+    packet_type: u8,
 }
 
 impl Packet {
-    fn new(version: u8, packet_id: u8) -> Self {
-        Packet {version, packet_id};
+    fn new(version: u8, packet_type: u8) -> Self {
+        Packet {version, packet_type }
     }
 
     fn version(&self) -> u8 {
-        self.version;
+        self.version
     }
 
-    fn packet_id(&self) -> u8 {
-        self.packet_id;
+    fn packet_type(&self) -> u8 {
+        self.packet_type
     }
 }
 
 pub struct FileRequestPacket{
     base_packet: Packet,
-    max_segment_size: u16,
+    max_packet_size: u16,
     offset: u64,
-    file_name: [char; 484]
+    file_name: String
 }
 
 impl FileRequestPacket {
@@ -59,23 +50,20 @@ impl FileRequestPacket {
             Some(file_offset) => file_offset
         };
 
-        // version needs to come from a config point.
-        let packet = Packet::new(1, get_packet_value(packet_type));
-        FileRequestPacket { packet, max_segment_size, offset_value, file_name.chars()};
+        let packet = Packet::new(SOFT_PROTOCOL_VERSION, get_packet_type_code(packet_type));
+        FileRequestPacket { base_packet: packet, max_packet_size: max_segment_size, offset: offset_value, file_name: file_name}
     }
 }
 
 pub struct AcceptFileTransferPacket {
     base_packet: Packet,
-    padding: u16,
     connection_id: u32,
     file_size: u64,
-    checksum: [char; 256]
+    checksum: [u8; 32]
 }
 
 pub struct DataPacket {
     base_packet: Packet,
-    padding: u16,
     connection_id: u32,
     sequence_number: u64,
     data: Vec<u8> // Variable size data.
@@ -83,7 +71,7 @@ pub struct DataPacket {
 
 pub struct DataAckPacket {
     base_packet: Packet,
-    recv_window: u16,
+    receive_window: u16,
     connection_id: u32,
     next_seq_num: u64
 }
@@ -91,16 +79,20 @@ pub struct DataAckPacket {
 pub struct ErrorPacket {
     base_packet: Packet,
     error_code: u8,
-    padding: u8,
     connection_id: u32
 }
 
-/*
-pub fn sha256(&self) -> String {
-    let packets: Vec<u8> = self.packets.iter().flat_map(|p| p.data.clone()).collect();
-    let data: &[u8] = &packets;
-    let mut hasher = Sha256::default();
-    hasher.input(&data);
-    format!("{:x}", hasher.result())
+#[cfg(test)]
+mod tests {
+    use sha2::{Sha256, Sha512, Digest};
+    use std::convert::TryInto;
+    use hex_literal::hex;
+
+    #[test]
+    fn sha256() {
+        let mut hasher = Sha256::new();
+        hasher.update(b"hello world");
+        let result: [u8; 32] = hasher.finalize().as_slice().try_into().expect("wrong length");
+        assert_eq!(result, hex!("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"));
+    }
 }
-*/
