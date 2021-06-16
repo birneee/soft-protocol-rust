@@ -1,1 +1,3 @@
 pub const SOFT_PROTOCOL_VERSION: u8 = 1;
+
+pub const SOFT_PACKET_HEADER_SIZE: u8 = 2;

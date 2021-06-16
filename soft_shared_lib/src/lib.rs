@@ -1,5 +1,6 @@
 pub mod constants;
 pub mod packet;
+pub mod error;
 
 #[cfg(test)]
 mod tests {
