@@ -91,12 +91,6 @@ pub struct DataAckPacket {
     next_seq_num: u64
 }
 
-pub struct ErrorPacket {
-    header: Header,
-    error_code: u8,
-    connection_id: u32
-}
-
 #[cfg(test)]
 mod tests {
     use sha2::{Sha256, Sha512, Digest};

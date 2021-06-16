@@ -1,3 +1,7 @@
+use soft_client_lib::SoftClient;
+
 fn main() {
-    println!("Hello, world!");
+    todo!("read command line arguments");
+    SoftClient::download(todo!(), todo!(), todo!());
+    todo!("handle error");
 }
