@@ -26,5 +26,16 @@ fn main() {
             .default_value("TBD")) //TODO: Determine default port
         .get_matches();
 
-    println!("{} {} {}", matches.value_of("target").unwrap(), matches.value_of("port").unwrap(), matches.value_of("filename").unwrap());
+    let target = matches.value_of("target").unwrap();
+    let port = matches.value_of("port").unwrap();
+    let filename = matches.value_of("filename").unwrap();
+
+    println!("Connection: {} on Port {}: {}", target, port, filename);
+
+    //TODO: Make connection
+    connect();
+}
+
+fn connect() {
+
 }

@@ -12,5 +12,14 @@ fn main() {
             .default_value("TBD")) //TODO: Determine default port
         .get_matches();
 
-    println!("{}", matches.value_of("port").unwrap());
+    let port = matches.value_of("port").unwrap();
+
+    println!("Port {}", port);
+
+    //TODO: Listen for incoming File requests
+    listen();
+}
+
+fn listen() {
+
 }
