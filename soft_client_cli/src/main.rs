@@ -25,10 +25,10 @@ fn main() {
             .help("The port to be used")
             .default_value("TBD")) //TODO: Determine default port
         .get_matches();
-
-    let target = matches.value_of("target").unwrap();
-    let port = matches.value_of("port").unwrap();
-    let filename = matches.value_of("filename").unwrap();
+    
+    let mut target = matches.value_of("target").unwrap();
+    let mut port = matches.value_of("port").unwrap();
+    let mut filename = matches.value_of("filename").unwrap();
 
     println!("Connection: {} on Port {}: {}", target, port, filename);
 

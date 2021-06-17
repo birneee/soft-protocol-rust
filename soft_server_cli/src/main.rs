@@ -12,7 +12,7 @@ fn main() {
             .default_value("TBD")) //TODO: Determine default port
         .get_matches();
 
-    let port = matches.value_of("port").unwrap();
+    let mut port = matches.value_of("port").unwrap();
 
     println!("Port {}", port);
 
