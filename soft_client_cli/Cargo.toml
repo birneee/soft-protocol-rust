@@ -6,3 +6,4 @@ edition = "2018"
 [dependencies]
 soft_shared_lib = { path = "../soft_shared_lib" }
 soft_client_lib = { path = "../soft_client_lib" }
+clap = "2.33.3"
