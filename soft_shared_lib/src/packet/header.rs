@@ -1,9 +1,9 @@
 use crate::constants::SOFT_PACKET_HEADER_SIZE;
 
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{ReadBytesExt};
 use std::io::Cursor;
 use crate::error::Result;
-use super::{HeaderWriter, HeaderReader};
+use super::{HeaderReader};
 
 pub struct Header {
     version: u8,

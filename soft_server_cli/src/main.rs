@@ -1,4 +1,8 @@
-use clap::{Arg, App, SubCommand};
+use clap::{Arg, App};
+use soft_server_lib::server::Server;
+use soft_server_lib::server_state::ServerState;
+use std::thread::sleep;
+use std::time::Duration;
 
 fn main() {
     let matches = App::new("SOFT Protocol Server CLI")
@@ -9,17 +13,25 @@ fn main() {
             .long("port")
             .value_name("PORT")
             .help("The port to opened for incoming connections")
-            .default_value("TBD")) //TODO: Determine default port
+            .required(true) //TODO: Determine default port
+        )
         .get_matches();
 
-    let mut port = matches.value_of("port").unwrap();
+    let port = matches
+        .value_of("port").expect("port not specified")
+        .parse().expect("invalid port");
 
-    println!("Port {}", port);
+    let server = Server::start_with_port(port);
 
-    //TODO: Listen for incoming File requests
-    listen();
-}
+    println!("server is listening on port {}", port);
 
-fn listen() {
+    println!("Press Ctrl-C to stop server...");
 
+    while server.state() == ServerState::Running {
+        sleep(Duration::from_millis(200));
+    }
+
+    drop(server); // stop server
+
+    println!("server stopped");
 }

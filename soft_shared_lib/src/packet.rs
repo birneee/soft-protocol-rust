@@ -7,5 +7,5 @@ pub mod header;
 pub mod header_reader;
 pub mod header_writer;
 pub mod packet_reader;
-pub mod soft_error_packet;
-pub mod soft_packet;
+pub mod packet_type;
+pub mod general_soft_packet;
