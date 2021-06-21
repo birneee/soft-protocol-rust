@@ -1,4 +1,6 @@
 use clap::{Arg, App, SubCommand};
+use soft_client_lib::client::Client;
+use std::net::IpAddr;
 
 fn main() {
     let matches = App::new("SOFT Protocol Client CLI")
@@ -26,11 +28,17 @@ fn main() {
             .default_value("TBD")) //TODO: Determine default port
         .get_matches();
     
-    let mut target = matches.value_of("target").unwrap();
-    let mut port = matches.value_of("port").unwrap();
+    let mut target:IpAddr = matches.value_of("target").expect("target not specified")
+        .parse().expect("invalid IP");
+    let port = matches
+        .value_of("port").expect("port not specified")
+        .parse().expect("invalid port");
     let mut filename = matches.value_of("filename").unwrap();
 
-    println!("Connection: {} on Port {}: {}", target, port, filename);
+    println!("Trying Connection: {} on Port {}: {}", target, port, filename);
+
+    let client = Client::start(port, target);
+
 
     //TODO: Make connection
     connect();
