@@ -1,0 +1,9 @@
+pub type Version = u8;
+pub type MaxPacketSize = u16;
+pub type ReceiveWindow = u32;
+pub type FileSize = u64;
+pub type ConnectionId = u32;
+pub type Checksum = [u8; 32];
+pub type Offset = u64;
+pub type SequenceNumber = u64;
+pub type NextSequenceNumber = u64;

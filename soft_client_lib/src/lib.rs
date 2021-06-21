@@ -1,6 +1,6 @@
-use std::net::{IpAddr, ToSocketAddrs, SocketAddr};
-use soft_shared_lib::packet::soft_error_packet::SoftError;
+use std::net::{SocketAddr};
 use std::fs::File;
+use soft_shared_lib::soft_error_code::SoftErrorCode;
 
 pub enum SoftClientState {
     Downloading,
@@ -34,7 +34,7 @@ impl<'a> SoftClient<'a> {
 }
 
 pub enum ClientError {
-    ProtocolError(SoftError),
+    ProtocolError(SoftErrorCode),
     //TODO add other errors that can happen
 }
 

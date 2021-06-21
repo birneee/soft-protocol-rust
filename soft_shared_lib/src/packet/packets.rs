@@ -5,14 +5,7 @@
 use crate::constants::SOFT_PROTOCOL_VERSION;
 use std::net::SocketAddr;
 use super::header::Header;
-
-pub enum PacketType {
-    FileRequestPacket = 0,
-    AcceptFileTransferPacket = 1,
-    DataPacket = 2,
-    DataAckPacket = 3,
-    ErrorPacket = 4
-}
+use crate::packet::packet_type::PacketType;
 
 pub struct Packet {
     /// The endpoint from where it came.
