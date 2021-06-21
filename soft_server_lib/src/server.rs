@@ -1,14 +1,16 @@
-use std::thread::{JoinHandle};
-use std::thread;
-use atomic::{Atomic, Ordering};
-use crate::server_state::ServerState;
-use crate::worker::Worker;
+use atomic::{Ordering};
+use crate::server_state::{ServerStateType, ServerState};
+use crate::receive_worker::ReceiveWorker;
 use std::sync::Arc;
-use std::net::{SocketAddr, Ipv4Addr, IpAddr};
+use std::net::{SocketAddr, Ipv4Addr, IpAddr, UdpSocket};
+use crate::data_send_worker::DataSendWorker;
+
+pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 
 pub struct Server {
-    thread_join_handle: Option<JoinHandle<()>>,
-    state: Arc<Atomic<ServerState>>
+    receive_worker: ReceiveWorker,
+    data_send_worker: DataSendWorker,
+    state: Arc<ServerState>
 }
 
 impl Server {
@@ -16,30 +18,26 @@ impl Server {
         return Self::start(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port));
     }
     pub fn start(addr: SocketAddr) -> Server {
-        let state = Arc::new(Atomic::new(ServerState::Running));
-        let handle = {
-            let state = state.clone();
-            thread::spawn(move ||{
-                Worker::new(state, addr).work();
-            })
-        };
+        let socket = UdpSocket::bind(addr).expect("failed to bind UDP socket");
+        let state = Arc::new(ServerState::new(socket));
 
         Server {
-            thread_join_handle: Some(handle),
+            receive_worker: ReceiveWorker::start(state.clone()),
+            data_send_worker: DataSendWorker::start(state.clone()),
             state,
         }
     }
 
     /// this function is only called by drop
     fn stop(&mut self) {
-        self.state.store(ServerState::Stopping, Ordering::SeqCst);
-        self.thread_join_handle
-            .take().expect("failed to take handle")
-            .join().expect("failed to join thread");
-        self.state.store(ServerState::Stopped, Ordering::SeqCst);
+        self.state.state_type.store(ServerStateType::Stopping, Ordering::SeqCst);
+        self.receive_worker.stop();
+        self.data_send_worker.stop();
+        self.state.state_type.store(ServerStateType::Stopped, Ordering::SeqCst);
     }
-    pub fn state(&self) -> ServerState {
-        return self.state.load(Ordering::SeqCst);
+
+    pub fn state(&self) -> ServerStateType {
+        return self.state.state_type.load(Ordering::SeqCst);
     }
 }
 

@@ -1,6 +1,6 @@
 use clap::{Arg, App};
 use soft_server_lib::server::Server;
-use soft_server_lib::server_state::ServerState;
+use soft_server_lib::server_state::ServerStateType;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -27,7 +27,9 @@ fn main() {
 
     println!("Press Ctrl-C to stop server...");
 
-    while server.state() == ServerState::Running {
+    //TODO implement graceful stop
+
+    while server.state() == ServerStateType::Running {
         sleep(Duration::from_millis(200));
     }
 
