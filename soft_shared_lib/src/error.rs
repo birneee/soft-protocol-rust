@@ -11,8 +11,6 @@ pub type Result<T> = result::Result<T, ErrorType>;
 pub enum ErrorType {
     IOError(io::Error),
     CouldNotReadHeader(String),
-    FileNotFound(String),
-    FileReadCompleted()
 }
 
 impl Display for ErrorType {
@@ -27,16 +25,7 @@ impl Display for ErrorType {
                 fmt,
                 "Expected {} header but could not be read from buffer.",
                 header
-            ),
-            ErrorType::FileNotFound(data) => write!(
-                fmt,
-                "File not found on server : {}",
-                data
-            ),
-            ErrorType::FileReadCompleted() => write!(
-                fmt,
-                "File read completely"
-            ),
+            )
         }
     }
 }
