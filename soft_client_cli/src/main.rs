@@ -1,6 +1,7 @@
 use clap::{Arg, App, SubCommand};
 use soft_client_lib::client::Client;
 use std::net::IpAddr;
+use soft_client_lib::client_state::ClientStateType::Running;
 
 fn main() {
     let matches = App::new("SOFT Protocol Client CLI")
@@ -39,11 +40,7 @@ fn main() {
 
     let client = Client::start(port, target);
 
+    while client.state() == Running {
 
-    //TODO: Make connection
-    connect();
-}
-
-fn connect() {
-
+    }
 }

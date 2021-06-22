@@ -1,5 +1,6 @@
 pub mod client;
 pub mod client_state;
+mod workers;
 
 // use std::net::{SocketAddr};
 // use std::fs::File;
