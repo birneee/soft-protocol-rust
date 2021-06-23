@@ -1,14 +1,12 @@
 use std::{fs::File, io::{BufRead, BufReader}, os::unix::prelude::MetadataExt};
 use soft_shared_lib::error::{Result, ErrorType};
+use crate::config;
 
 pub struct SOFTFile<> {
     file_name: String,
     reader: BufReader<File>,
     file_size: u64,
 }
-
-// TODO: Change if needed
-const BUFFER_SIZE: usize = 500;
 
 impl SOFTFile{
     // Create a new Buffered SOFT File that provides data for transmission.
@@ -26,7 +24,7 @@ impl SOFTFile{
             file_size = metadata.size();
 
         // Create a buffered reader for this file
-            let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+            let mut reader = BufReader::with_capacity(config::FILE_BUFFER_SIZE, file);
 
             
             Ok(SOFTFile {

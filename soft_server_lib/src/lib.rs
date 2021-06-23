@@ -8,6 +8,7 @@ mod checksum_cache;
 mod checksum_calculator;
 mod data_send_worker;
 pub mod file_reader;
+mod config;
 
 #[cfg(test)]
 mod tests {
