@@ -1,8 +1,10 @@
 use crate::packet::packet_type::PacketType;
-use std::io::{Cursor};
-use byteorder::{ReadBytesExt, BigEndian};
+use std::io::{Cursor, Write};
+use byteorder::{ReadBytesExt, BigEndian, WriteBytesExt};
 use crate::soft_error_code::SoftErrorCode;
 use crate::packet::general_soft_packet::GeneralSoftPacket;
+use crate::field_types::{MaxPacketSize, Version};
+use std::borrow::{BorrowMut, Borrow};
 
 /// This type provides getter and setter for all SOFT packet fields
 //  Please be careful, it does not perform packet type checks, or size checks
@@ -28,14 +30,24 @@ impl<'a> UncheckedPacketView<'a> {
         }
     }
 
-    pub fn set_version(&mut self, val: u8) {
+    pub fn set_version(&mut self, val: Version) {
         self.buf[0] = val;
     }
 
-    pub fn max_packet_size(&self) -> u16 {
+    pub fn set_packet_type(&mut self, val: PacketType) {
+        self.buf[1] = val as u8;
+    }
+
+    pub fn max_packet_size(&self) -> MaxPacketSize {
         let mut c = Cursor::new(&self.buf);
         c.set_position(2);
         return c.read_u16::<BigEndian>().expect("failed to read field");
+    }
+
+    pub fn set_max_packet_size(&mut self, val: MaxPacketSize) {
+        let mut c = Cursor::new(self.buf.borrow_mut());
+        c.set_position(2);
+        c.write_u16::<BigEndian>(val).expect("failed to write field");
     }
 
     pub fn offset(&self) -> u64 {
@@ -47,6 +59,12 @@ impl<'a> UncheckedPacketView<'a> {
     /// reads buffer until the end
     pub fn file_name(&self) -> String {
         return std::str::from_utf8(&self.buf[12..]).expect("failed to read field").to_string();
+    }
+
+    pub fn set_file_name(&mut self, val: &str) {
+        let mut c = Cursor::new( self.buf.borrow_mut());
+        c.set_position(12);
+        c.write(val.as_bytes()).expect("failed to write field");
     }
 
     pub fn connection_id(&self) -> u32 {
