@@ -1,7 +1,7 @@
 use clap::{Arg, App, SubCommand};
 use soft_client_lib::client::Client;
 use std::net::IpAddr;
-use soft_client_lib::client_state::ClientStateType::Running;
+use soft_client_lib::client_state::ClientStateType::{*};
 use std::thread;
 use std::sync::{Mutex, Arc};
 use std::thread::sleep;
@@ -55,14 +55,26 @@ fn main() {
         //TODO: Replace with actual work
         sleep(Duration::new(5, 0));
         cli.request_file();
-        sleep(Duration::new(5, 0));
 
         cli.stop();
     });
 
     //TODO: We can do stuff here (note that this thread should not write to the client var but only read state information for now)
-    while client.state() == Running {
-        println!("Client is still running...");
+    while true {
+        match client.state() {
+            Starting => println!("starting..."),
+            Running => println!("running..."),
+            Downloading => println!("downloading..."),
+            Stopping => println!("stopping..."),
+            Stopped => {
+                println!("stopped");
+                break;
+            }
+            Error => {
+                println!("an error has occured");
+                break;
+            }
+        }
         sleep(Duration::new(1, 0));
     }
 

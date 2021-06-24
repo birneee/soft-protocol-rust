@@ -1,15 +1,14 @@
 use std::net::{SocketAddr, Ipv4Addr, IpAddr, UdpSocket};
 use std::sync::Arc;
 use crate::client_state::{ClientState, ClientStateType};
-use crate::workers::{SendWorker, ReceiveWorker};
 use atomic::Ordering;
 use std::sync::atomic::Ordering::SeqCst;
+use std::thread::sleep;
+use std::time::Duration;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 
 pub struct Client {
-    send_worker: SendWorker,
-    receive_worker: ReceiveWorker,
     state: Arc<ClientState>
 }
 
@@ -22,23 +21,20 @@ impl Client{
         println!("creating client with {} to get file {}", address,filename);
 
         Client {
-            send_worker: SendWorker::start(state.clone()),
-            receive_worker: ReceiveWorker::start(state.clone()),
             state
         }
     }
 
     pub fn start(&self) {
         self.state.state_type.store(ClientStateType::Running, SeqCst);
-
         //TODO: make connection to server
         //TODO: handle connection
     }
 
     pub fn stop(&self) {
-        println!("stopping client...");
         self.state.state_type.store(ClientStateType::Stopping, SeqCst);
         //TODO: Implement Client stopping logic
+        sleep(Duration::new(3, 0));
         self.state.state_type.store(ClientStateType::Stopped, SeqCst);
     }
 
@@ -46,7 +42,7 @@ impl Client{
         println!("requesting file...");
         //TODO: Implement File Request
         self.state.state_type.store(ClientStateType::Downloading, SeqCst);
-
+        sleep(Duration::new(10, 0));
     }
 
     pub fn state(&self) -> ClientStateType{return self.state.state_type.load(Ordering::SeqCst)}
