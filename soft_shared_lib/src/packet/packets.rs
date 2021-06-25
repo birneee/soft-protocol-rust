@@ -52,7 +52,7 @@ pub struct FileRequestPacket{
 
 impl FileRequestPacket {
     pub fn new(max_segment_size: u16, offset: Option<u64>, file_name: String) -> Self {
-        let packet_type = PacketType::FileRequestPacket;
+        let packet_type = PacketType::Req;
         let offset_value: u64 = match offset {
             None => 0,
             Some(file_offset) => file_offset
