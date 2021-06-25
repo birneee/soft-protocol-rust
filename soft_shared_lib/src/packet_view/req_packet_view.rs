@@ -1,7 +1,7 @@
 use crate::packet::general_soft_packet::GeneralSoftPacket;
 use crate::packet::packet_type::PacketType;
 use crate::packet_view::unchecked_packet_view::UncheckedPacketView;
-use crate::field_types::{Version, MaxPacketSize, Offset};
+use crate::field_types::{Version, MaxPacketSize, Offset, PacketTypeRaw};
 use std::mem::size_of;
 use crate::constants::SOFT_PROTOCOL_VERSION;
 
@@ -13,7 +13,7 @@ impl<'a> ReqPacketView<'a> {
 
     fn get_required_buffer_size(file_name: &str) -> usize {
         return size_of::<Version>() +
-            size_of::<PacketType>() +
+            size_of::<PacketTypeRaw>() +
             size_of::<MaxPacketSize>() +
             size_of::<Offset>() +
             file_name.as_bytes().len()
@@ -23,8 +23,7 @@ impl<'a> ReqPacketView<'a> {
         let mut buf = vec![0u8; Self::get_required_buffer_size(&file_name)];
         let mut view = UncheckedPacketView::from_buffer(buf.as_mut_slice());
         view.set_version(SOFT_PROTOCOL_VERSION);
-        view.set_version(SOFT_PROTOCOL_VERSION);
-        view.set_packet_type(PacketType::FileRequestPacket);
+        view.set_packet_type(PacketType::Req);
         view.set_max_packet_size(max_packet_size);
         view.set_file_name(file_name);
         return buf;
@@ -32,7 +31,7 @@ impl<'a> ReqPacketView<'a> {
 
     pub fn from_buffer(buf: &mut [u8]) -> ReqPacketView {
         let inner = UncheckedPacketView::from_buffer(buf);
-        assert_eq!(inner.packet_type(), PacketType::FileRequestPacket);
+        assert_eq!(inner.packet_type(), PacketType::Req);
         ReqPacketView {
             inner,
         }
