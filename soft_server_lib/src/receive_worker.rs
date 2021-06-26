@@ -13,6 +13,8 @@ use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
 use std::thread;
 use crate::server::SUPPORTED_PROTOCOL_VERSION;
+use soft_shared_lib::field_types::Checksum;
+use soft_shared_lib::packet_view::acc_packet_view::AccPacketView;
 
 
 /// Server worker that handles the server logic
@@ -69,7 +71,7 @@ impl ReceiveWorker {
             let (packet, src) = Self::recv_packet(&state.socket, &mut receive_buffer);
             match packet {
                 Req(p) => {
-                    if FileReader::verify_file(p.file_name()) {
+                  if FileReader::verify_file(p.file_name()) {
                         let file = match FileReader::open_file(p.file_name()) {
                             Ok(file) => file,
                             Err(error) => todo!("Map Error type to response builder in a function")
@@ -80,9 +82,11 @@ impl ReceiveWorker {
                             Err(error) => todo!("Map Error Type to response builder in a function")
                         };
                         let connection_id =  state.connection_pool.add(src, p.max_packet_size(), reader);
+                        //TODO send ACC
+                        let buf = AccPacketView::create_packet_buffer(connection_id, file_size, checksum);
+                        state.socket.send_to(&buf, src).expect("failed to send");
                     } else {
                     }
-                    //TODO send ACC
                 }
                 Acc(_) => {
                     eprintln!("ignore ACC packets");
