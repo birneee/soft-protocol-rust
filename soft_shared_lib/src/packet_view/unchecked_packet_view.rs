@@ -1,8 +1,10 @@
 use crate::packet::packet_type::PacketType;
-use std::io::{Cursor};
-use byteorder::{ReadBytesExt, BigEndian};
+use std::io::{Cursor, Write, Read};
+use byteorder::{ReadBytesExt, BigEndian, WriteBytesExt};
 use crate::soft_error_code::SoftErrorCode;
 use crate::packet::general_soft_packet::GeneralSoftPacket;
+use crate::field_types::{MaxPacketSize, Version, ConnectionId, FileSize, Checksum, Offset};
+use std::borrow::{BorrowMut, Borrow};
 
 /// This type provides getter and setter for all SOFT packet fields
 //  Please be careful, it does not perform packet type checks, or size checks
@@ -11,7 +13,7 @@ pub struct UncheckedPacketView<'a>{
 }
 
 impl<'a> GeneralSoftPacket for UncheckedPacketView<'a> {
-    fn version(&self) -> u8 {
+    fn version(&self) -> Version {
         return self.buf[0];
     }
 
@@ -28,17 +30,27 @@ impl<'a> UncheckedPacketView<'a> {
         }
     }
 
-    pub fn set_version(&mut self, val: u8) {
+    pub fn set_version(&mut self, val: Version) {
         self.buf[0] = val;
     }
 
-    pub fn max_packet_size(&self) -> u16 {
+    pub fn set_packet_type(&mut self, val: PacketType) {
+        self.buf[1] = val as u8;
+    }
+
+    pub fn max_packet_size(&self) -> MaxPacketSize {
         let mut c = Cursor::new(&self.buf);
         c.set_position(2);
         return c.read_u16::<BigEndian>().expect("failed to read field");
     }
 
-    pub fn offset(&self) -> u64 {
+    pub fn set_max_packet_size(&mut self, val: MaxPacketSize) {
+        let mut c = Cursor::new(self.buf.borrow_mut());
+        c.set_position(2);
+        c.write_u16::<BigEndian>(val).expect("failed to write field");
+    }
+
+    pub fn offset(&self) -> Offset {
         let mut c = Cursor::new(&self.buf);
         c.set_position(4);
         return c.read_u64::<BigEndian>().expect("failed to read field");
@@ -49,22 +61,48 @@ impl<'a> UncheckedPacketView<'a> {
         return std::str::from_utf8(&self.buf[12..]).expect("failed to read field").to_string();
     }
 
-    pub fn connection_id(&self) -> u32 {
+    pub fn set_file_name(&mut self, val: &str) {
+        let mut c = Cursor::new( self.buf.borrow_mut());
+        c.set_position(12);
+        c.write(val.as_bytes()).expect("failed to write field");
+    }
+
+    pub fn connection_id(&self) -> ConnectionId {
         let mut c = Cursor::new(&self.buf);
         c.set_position(4);
         return c.read_u32::<BigEndian>().expect("failed to read field");
     }
 
-    pub fn file_size(&self) -> u64 {
+    pub fn set_connection_id(&mut self, val: ConnectionId) {
+        let mut c = Cursor::new(self.buf.borrow_mut());
+        c.set_position(4);
+        c.write_u32::<BigEndian>(val).expect("failed to write field");
+    }
+
+    pub fn file_size(&self) -> FileSize {
         let mut c = Cursor::new(&self.buf);
         c.set_position(8);
         return c.read_u64::<BigEndian>().expect("failed to read field");
     }
 
-    pub fn checksum(&self) ->  [u8; 32] {
-        let mut sha256 = [0u8; 32];
-        sha256.clone_from_slice(&self.buf[16..48]);
-        return sha256;
+    pub fn set_file_size(&mut self, val: FileSize) {
+        let mut c = Cursor::new(self.buf.borrow_mut());
+        c.set_position(8);
+        c.write_u64::<BigEndian>(val).expect("failed to write field");
+    }
+
+    pub fn checksum(&self) ->  Checksum {
+        let mut checksum: Checksum = Default::default();
+        let mut c = Cursor::new(&self.buf);
+        c.set_position(16);
+        c.read_exact(&mut checksum).expect("failed to read field");
+        return checksum;
+    }
+
+    pub fn set_checksum(&mut self, val: Checksum) {
+        let mut c = Cursor::new(self.buf.borrow_mut());
+        c.set_position(16);
+        c.write_all(&val).expect("failed to write field");
     }
 
     pub fn error_code(&self) -> SoftErrorCode {

@@ -17,11 +17,11 @@ impl<'a> PacketView<'a> {
     pub fn from_buffer(buf: &mut [u8]) -> PacketView {
         let unchecked = UncheckedPacketView::from_buffer(buf);
         match unchecked.packet_type() {
-            PacketType::FileRequestPacket => PacketView::Req(ReqPacketView::from_buffer(buf)),
-            PacketType::AcceptFileTransferPacket => PacketView::Acc(AccPacketView::from_buffer(buf)),
-            PacketType::DataPacket => todo!(),
-            PacketType::DataAckPacket => todo!(),
-            PacketType::ErrorPacket => PacketView::Err(ErrPacketView::from_buffer(buf)),
+            PacketType::Req => PacketView::Req(ReqPacketView::from_buffer(buf)),
+            PacketType::Acc => PacketView::Acc(AccPacketView::from_buffer(buf)),
+            PacketType::Data => todo!(),
+            PacketType::Ack => todo!(),
+            PacketType::Err => PacketView::Err(ErrPacketView::from_buffer(buf)),
         }
     }
 }
