@@ -1,5 +1,9 @@
 use atomic::{Ordering};
+use soft_shared_lib::error::Result;
+use crate::{config};
+use crate::file_io::reader::FileReader;
 use crate::server_state::{ServerStateType, ServerState};
+use std::char::MAX;
 use std::sync::Arc;
 use std::net::{UdpSocket, SocketAddr};
 use soft_shared_lib::packet_view::packet_view::PacketView;
@@ -14,7 +18,7 @@ use crate::server::SUPPORTED_PROTOCOL_VERSION;
 /// Server worker that handles the server logic
 pub struct ReceiveWorker {
     running: Arc<AtomicBool>,
-    join_handle: Option<JoinHandle<()>>,
+    join_handle: Option<JoinHandle<()>>
 }
 
 /// 2^16 bytes - 8 byte UDP header, - 20 byte IP header
@@ -31,6 +35,7 @@ impl ReceiveWorker {
                 Self::work(state, running);
             })
         };
+
         ReceiveWorker {
             running,
             join_handle: Some(join_handle),
@@ -52,6 +57,12 @@ impl ReceiveWorker {
         return (packet, src);
     }
 
+    fn send_packet<'a>(socket: &UdpSocket, send_buffer: &'a mut [u8; config::MAX_PACKET_SIZE]) -> Result<bool> {
+        socket.send(send_buffer);
+
+        Ok(false)
+    }
+
     pub fn work(state: Arc<ServerState>, running: Arc<AtomicBool>) {
         let mut receive_buffer = [0u8; MAX_PACKET_SIZE];
         while running.load(Ordering::SeqCst) {
@@ -59,8 +70,17 @@ impl ReceiveWorker {
             match packet {
                 Req(p) => {
                     //TODO check if file exists
-                    //TODO calculate checksum
-                    let connection_id = state.connection_pool.add(src, p.max_packet_size(), p.file_name());
+                    if FileReader::verify_file(p.file_name()) {
+                        let connection_id = match state.connection_pool.add(src, p.max_packet_size(), p.file_name()) {
+                            Ok(connection_id) => connection_id,
+                            Err(error) => todo!("Map Error Type to response builder in a function.")
+                        };
+                        let checksum = match state.checksum_engine.generate_checksum(p.file_name()) {
+                            Ok(checksum) => checksum,
+                            Err(error) => todo!("Map Error Type to response builder in a function")
+                        };
+                    } else {
+                    }
                     //TODO send ACC
                 }
                 Acc(_) => {

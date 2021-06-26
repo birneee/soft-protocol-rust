@@ -15,6 +15,15 @@ pub enum ErrorType {
     FileReadCompleted()
 }
 
+trait ErrorPacket {
+    fn get_soft_packet();
+}
+
+impl ErrorPacket for ErrorType {
+
+}
+
+
 impl Display for ErrorType {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> fmt::Result {
         match self {

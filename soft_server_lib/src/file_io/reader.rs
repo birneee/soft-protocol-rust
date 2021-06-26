@@ -2,39 +2,36 @@ use std::{fs::File, io::{BufRead, BufReader}, os::unix::prelude::MetadataExt};
 use soft_shared_lib::error::{Result, ErrorType};
 use crate::config;
 
-pub struct SOFTFile<> {
-    file_name: String,
+pub struct FileReader {
     reader: BufReader<File>,
     file_size: u64,
 }
 
-impl SOFTFile{
+impl FileReader{
     // Create a new Buffered SOFT File that provides data for transmission.
     pub fn new(file_name: String) -> Result<Self> {
-        // Verify if file exists.
-        let mut file_size = 0;
-        let exists = std::path::Path::new(&file_name).exists();
+        let file_size;
         
-        if exists {
-            // Open file, get size.
-            let file = File::open(&file_name)?;
-            let metadata = file.metadata()?;
-            
-            // metadata.is_dir()
-            file_size = metadata.size();
+        // Open file, get size
+        let mut file = File::open(&file_name)?;
+        let metadata = file.metadata()?;
+        
+        // metadata.is_dir() // TODO: Add more validations on the file.
+        file_size = metadata.size();
 
         // Create a buffered reader for this file
-            let mut reader = BufReader::with_capacity(config::FILE_BUFFER_SIZE, file);
+        let reader = BufReader::with_capacity(config::FILE_BUFFER_SIZE, file);
 
-            
-            Ok(SOFTFile {
-                file_name,
-                reader: reader,
-                file_size: file_size
-            })
-        } else {
-            Err(ErrorType::FileNotFound("File not found".to_string()))
-        }
+        
+        Ok(FileReader {
+            reader: reader,
+            file_size: file_size,
+        })
+    }
+
+    /// Verify if a file exists in this machine.
+    pub fn verify_file(file_name: String) -> bool {
+        return std::path::Path::new(&file_name).exists();
     }
 
     /// Gives a friendly hello!
@@ -65,9 +62,4 @@ impl SOFTFile{
     pub fn get_file_size(&mut self) -> u64 {
         self.file_size
     }
-
-    pub fn get_file_name(&mut self) -> &str {
-        self.file_name.as_str()
-    }
 }
-

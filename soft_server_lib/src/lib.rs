@@ -4,10 +4,9 @@ mod receive_worker;
 mod congestion_cache;
 mod connection_state;
 mod connection_pool;
-mod checksum_cache;
-mod checksum_calculator;
+mod checksum_engine;
 mod data_send_worker;
-pub mod file_reader;
+mod file_io;
 mod config;
 
 #[cfg(test)]
