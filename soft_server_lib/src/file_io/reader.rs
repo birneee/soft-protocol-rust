@@ -44,8 +44,7 @@ impl FileReader{
         let buffer = self.reader.fill_buf().unwrap();
         let b: Vec<u8>;
         if buffer.len() == 0 {
-            // We have reached the end of the file
-            return Err(ErrorType::FileReadCompleted())
+            return Ok(buffer.to_vec());
         }
         if buffer.len() < length {
             b = buffer.to_vec();
