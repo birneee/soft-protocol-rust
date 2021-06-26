@@ -1,6 +1,8 @@
+use std::fs::File;
 use std::net::SocketAddr;
 use std::sync::{RwLock, Arc};
 use crate::connection_state::ConnectionState;
+use crate::file_io::reader::FileReader;
 use soft_shared_lib::error::{ErrorType, Result};
 use std::collections::HashMap;
 use rand::Rng;
@@ -35,15 +37,12 @@ impl ConnectionPool {
         (*guard).get(&connection_id).map(|arc| { arc.clone() })
     }
 
-    pub fn add(&self, src: SocketAddr, max_packet_size: MaxPacketSize, file_name: String) -> Result<ConnectionId> {
+    pub fn add(&self, src: SocketAddr, max_packet_size: MaxPacketSize, reader: FileReader) -> ConnectionId {
         let mut guard = self.map.write().expect("failed to lock");
         let connection_id = Self::generate_connection_id(&*guard);
-        let state = match ConnectionState::new(connection_id, src, max_packet_size, file_name) {
-            Ok(connection_state) => connection_state,
-            Err(error) => return Err(error)
-        };
+        let state = ConnectionState::new(connection_id, src, max_packet_size, reader);
         (*guard).insert(connection_id, Arc::new(RwLock::new(state)));
-        Ok(connection_id)
+        return connection_id;
     }
 
     pub fn drop(&self, connection_id: ConnectionId) {

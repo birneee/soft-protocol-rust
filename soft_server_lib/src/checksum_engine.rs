@@ -1,12 +1,14 @@
-use std::{collections::HashMap, sync::RwLock};
+use std::{collections::HashMap, io::{Seek, SeekFrom}, sync::RwLock};
 use sha2::{Sha256, Digest};
 use std::fs::File;
-use soft_shared_lib::error::Result;
+use soft_shared_lib::{error::Result, field_types::Checksum};
 use std::io::copy;
+
+use crate::file_io::reader::FileReader;
 
 
 pub struct ChecksumEngine {
-    cache: RwLock<HashMap<String, String>>,
+    cache: RwLock<HashMap<String, Checksum>>,
 }
 
 impl ChecksumEngine {
@@ -16,26 +18,27 @@ impl ChecksumEngine {
         }
     }
 
-    pub fn generate_checksum(&self, path:String) -> Result<String> {
+    pub fn generate_checksum(&self, reader: &mut FileReader) -> Result<Checksum> {
         // Read in it's own scope. the guard get's dropped at the end.
         {
             let guard = self.cache.read().expect("failed to lock");
-            if (*guard).contains_key(&path) {
-                let hash = match (*guard).get(&path) {
-                    Some(hash) => hash,
-                    None => ""
-                };
-                return Ok(String::from(hash))
-            }
+            let _ = match (*guard).get(&reader.file_name) {
+                Some(hash) => return Ok(hash.clone()),
+                None => ()
+            };
         }
+        let mut checksum: Checksum = [0; 32];
+        let mut sha256 = Sha256::new();
+
+        copy(&mut reader.reader, &mut sha256)?;
+        let checksum_value = sha256.finalize();
+
+        checksum.clone_from_slice(checksum_value.as_slice());
 
         let mut guard = self.cache.write().expect("failed to lock");
+        (*guard).insert(reader.file_name.clone(), checksum);
+        reader.reader.seek(SeekFrom::Start(0));
 
-        let mut file = File::open(&path)?;
-        let mut sha256 = Sha256::new();
-        copy(&mut file, &mut sha256)?;
-        let hash: String = format!("{:X}", sha256.finalize());
-        (*guard).insert(path, hash.clone());
-        Ok(hash)
+        Ok(checksum)
     } 
 }

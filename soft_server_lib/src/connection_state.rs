@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::net::SocketAddr;
 use std::collections::HashMap;
 use soft_shared_lib::{
@@ -13,26 +14,25 @@ pub struct ConnectionState {
     max_packet_size: u16,
     file_name: String,
     send_buffer: HashMap<SequenceNumber, Vec<u8>>,
-    file: FileReader,
+    reader: FileReader,
     last_packet_acknowledged: i128,
     last_packet_sent: i128,
     client_receive_window: ReceiveWindow,
 }
 
 impl ConnectionState {
-    pub fn new(connection_id: u32, addr: SocketAddr, max_packet_size: u16, file_name: String) -> Result<Self> {
-        let file_name_copy = file_name.clone();
-        Ok(ConnectionState {
+    pub fn new(connection_id: u32, addr: SocketAddr, max_packet_size: u16, reader: FileReader) -> Self {
+        ConnectionState {
             connection_id,
             addr,
             max_packet_size,
-            file_name,
+            file_name: reader.file_name.clone(),
             send_buffer: HashMap::new(),
-            file: FileReader::new(file_name_copy)?,
+            reader,
             last_packet_acknowledged: -1,
             last_packet_sent: -1,
             client_receive_window: 1,
-        })
+        }
     }
 
     pub fn congestion_window(&self) -> usize {

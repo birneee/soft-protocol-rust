@@ -69,16 +69,17 @@ impl ReceiveWorker {
             let (packet, src) = Self::recv_packet(&state.socket, &mut receive_buffer);
             match packet {
                 Req(p) => {
-                    //TODO check if file exists
                     if FileReader::verify_file(p.file_name()) {
-                        let connection_id = match state.connection_pool.add(src, p.max_packet_size(), p.file_name()) {
-                            Ok(connection_id) => connection_id,
-                            Err(error) => todo!("Map Error Type to response builder in a function.")
+                        let file = match FileReader::open_file(p.file_name()) {
+                            Ok(file) => file,
+                            Err(error) => todo!("Map Error type to response builder in a function")
                         };
-                        let checksum = match state.checksum_engine.generate_checksum(p.file_name()) {
+                        let mut reader = FileReader::new(p.file_name(), file);
+                        let checksum = match state.checksum_engine.generate_checksum(&mut reader) {
                             Ok(checksum) => checksum,
                             Err(error) => todo!("Map Error Type to response builder in a function")
                         };
+                        let connection_id =  state.connection_pool.add(src, p.max_packet_size(), reader);
                     } else {
                     }
                     //TODO send ACC
