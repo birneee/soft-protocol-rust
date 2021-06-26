@@ -9,6 +9,8 @@ use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
 use std::thread;
 use crate::server::SUPPORTED_PROTOCOL_VERSION;
+use soft_shared_lib::field_types::Checksum;
+use soft_shared_lib::packet_view::acc_packet_view::AccPacketView;
 
 
 /// Server worker that handles the server logic
@@ -59,9 +61,13 @@ impl ReceiveWorker {
             match packet {
                 Req(p) => {
                     //TODO check if file exists
+                    let file_size = 0;
                     //TODO calculate checksum
+                    let checksum: Checksum = Default::default();
                     let connection_id = state.connection_pool.add(src, p.max_packet_size(), p.file_name());
                     //TODO send ACC
+                    let buf = AccPacketView::create_packet_buffer(connection_id, file_size, checksum);
+                    state.socket.send_to(&buf, src).expect("failed to send");
                 }
                 Acc(_) => {
                     eprintln!("ignore ACC packets");

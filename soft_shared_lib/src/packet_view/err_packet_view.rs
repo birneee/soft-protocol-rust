@@ -10,7 +10,7 @@ pub struct ErrPacketView<'a> {
 impl<'a> ErrPacketView<'a> {
     pub fn from_buffer(buf: &mut [u8]) -> ErrPacketView {
         let inner = UncheckedPacketView::from_buffer(buf);
-        assert_eq!(inner.packet_type(), PacketType::ErrorPacket);
+        assert_eq!(inner.packet_type(), PacketType::Err);
         ErrPacketView {
             inner,
         }
