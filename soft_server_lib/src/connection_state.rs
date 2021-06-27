@@ -20,7 +20,7 @@ pub struct ConnectionState {
     pub last_packet_acknowledged: Option<SequenceNumber>,
     /// None before receiving ACK 0
     pub last_packet_sent: Option<SequenceNumber>,
-    client_receive_window: ReceiveWindow,
+    pub client_receive_window: ReceiveWindow,
 }
 
 impl ConnectionState {
