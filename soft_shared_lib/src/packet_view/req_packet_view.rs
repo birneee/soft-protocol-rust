@@ -45,6 +45,14 @@ impl<'a> ReqPacketView<'a> {
         self.inner.set_max_packet_size(val);
     }
 
+    pub fn offset(&self) -> Offset {
+        self.inner.offset()
+    }
+
+    pub fn set_offset(&mut self, val: Offset) {
+        self.inner.set_offset(val);
+    }
+
     pub fn file_name(&self) -> String {
         self.inner.file_name()
     }
