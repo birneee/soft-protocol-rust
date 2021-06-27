@@ -1,16 +1,15 @@
 use atomic::{Ordering};
-use crate::server_state::{ServerStateType, ServerState};
+use crate::server_state::{ServerState};
 use std::sync::Arc;
 use std::net::{UdpSocket, SocketAddr};
 use soft_shared_lib::packet_view::packet_view::PacketView;
 use PacketView::{Req, Acc, Data, Ack};
-use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
 use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
 use std::thread;
-use crate::server::SUPPORTED_PROTOCOL_VERSION;
 use soft_shared_lib::field_types::Checksum;
 use soft_shared_lib::packet_view::acc_packet_view::AccPacketView;
+use soft_shared_lib::packet_view::packet_view_error::PacketViewError;
 
 
 /// Server worker that handles the server logic
@@ -23,7 +22,6 @@ pub struct ReceiveWorker {
 const MAX_PACKET_SIZE: usize = 2usize.pow(16) - 8 - 20;
 
 impl ReceiveWorker {
-
     /// start worker thread
     pub fn start(state: Arc<ServerState>) -> ReceiveWorker {
         let running = Arc::new(AtomicBool::new(true));
@@ -47,10 +45,9 @@ impl ReceiveWorker {
             .join().expect("failed to join thread");
     }
 
-    fn recv_packet<'a>(socket: &UdpSocket, receive_buffer: &'a mut [u8; MAX_PACKET_SIZE]) -> (PacketView<'a>, SocketAddr) {
+    fn recv_packet<'a>(socket: &UdpSocket, receive_buffer: &'a mut [u8; MAX_PACKET_SIZE]) -> (Result<PacketView<'a>, PacketViewError>, SocketAddr) {
         let (size, src) = socket.recv_from(receive_buffer).expect("failed to receive");
         let packet = PacketView::from_buffer(&mut receive_buffer[0..size]);
-        assert_eq!(packet.version(), SUPPORTED_PROTOCOL_VERSION);
         return (packet, src);
     }
 
@@ -59,9 +56,13 @@ impl ReceiveWorker {
         while running.load(Ordering::SeqCst) {
             let (packet, src) = Self::recv_packet(&state.socket, &mut receive_buffer);
             match packet {
-                Req(p) => {
+                Err(PacketViewError::UnsupportedVersion) => {
+                    //TODO send error
+                }
+                Ok(Req(p)) => {
                     //TODO check if file exists
                     let file_size = 0;
+                    //TODO validate offset
                     //TODO calculate checksum
                     let checksum: Checksum = Default::default();
                     let connection_id = state.connection_pool.add(src, p.max_packet_size(), p.file_name());
@@ -69,17 +70,37 @@ impl ReceiveWorker {
                     let buf = AccPacketView::create_packet_buffer(connection_id, file_size, checksum);
                     state.socket.send_to(&buf, src).expect("failed to send");
                 }
-                Acc(_) => {
+                Ok(Acc(_)) => {
                     eprintln!("ignore ACC packets");
                 }
-                Data() => {
+                Ok(Data()) => {
                     eprintln!("ignore DATA packets");
                 }
-                Ack() => {
-                    todo!()
+                Ok(Ack(p)) => {
+                    if let Some(connection) = state.connection_pool.get(p.connection_id()) {
+                        let mut guard = connection.write().expect("failed to lock");
+                        (*guard).client_receive_window = p.receive_window();
+                        let next_sequence_number = p.next_sequence_number();
+                        if next_sequence_number >= 1 {
+                            let packet_acknowledged = next_sequence_number - 1;
+                            // check if sequence number is valid
+                            if packet_acknowledged > (*guard).last_packet_sent.unwrap_or(0) {
+                                //TODO send bad packet error
+                                continue;
+                            }
+                            if (*guard).last_packet_acknowledged.is_none() || packet_acknowledged > (*guard).last_packet_acknowledged.unwrap() {
+                                (*guard).last_packet_acknowledged = Some(packet_acknowledged);
+                            }
+                        }
+                        //TODO detect congestion
+                        //TODO detect packet loss
+                    }
+                    //TODO validate next sequence number
                 }
-                PacketView::Err(_) => {
-                    todo!()
+                Ok(PacketView::Err(_)) => {
+                    //TODO check version
+                    //TODO log error
+                    //TODO drop connection state
                 }
             }
         }
