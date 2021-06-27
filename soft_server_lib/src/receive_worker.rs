@@ -1,9 +1,7 @@
 use atomic::{Ordering};
 use soft_shared_lib::error::Result;
 use crate::config::{FILE_READER_BUFFER_SIZE, SERVER_MAX_PACKET_SIZE};
-use crate::{config};
-use crate::server_state::{ServerStateType, ServerState};
-use std::char::MAX;
+use crate::server_state::{ServerState};
 use std::fs::File;
 use std::io::{BufReader, SeekFrom, Seek};
 use std::os::unix::prelude::MetadataExt;
@@ -14,15 +12,15 @@ use PacketView::{Req, Acc, Data, Ack};
 use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
 use std::thread;
-use soft_shared_lib::field_types::{Checksum, ConnectionId, MaxPacketSize};
+use soft_shared_lib::field_types::{ConnectionId, MaxPacketSize};
 use soft_shared_lib::packet_view::acc_packet_view::AccPacketView;
-use soft_shared_lib::packet_view::packet_view_error::PacketViewError;
 use soft_shared_lib::soft_error_code::SoftErrorCode;
 use soft_shared_lib::packet_view::err_packet_view::ErrPacketView;
 use std::path::Path;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use std::cmp::min;
 
+static PUBLIC_DIR: &str = "public";
 
 /// Server worker that handles the server logic
 pub struct ReceiveWorker {
