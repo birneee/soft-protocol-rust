@@ -3,8 +3,8 @@ use std::io::{Cursor, Write, Read};
 use byteorder::{ReadBytesExt, BigEndian, WriteBytesExt};
 use crate::soft_error_code::SoftErrorCode;
 use crate::packet::general_soft_packet::GeneralSoftPacket;
-use crate::field_types::{MaxPacketSize, Version, ConnectionId, FileSize, Checksum, Offset, ReceiveWindow, NextSequenceNumber};
-use std::borrow::{BorrowMut, Borrow};
+use crate::field_types::{MaxPacketSize, Version, ConnectionId, FileSize, Checksum, Offset, ReceiveWindow, NextSequenceNumber, ErrorCodeRaw};
+use std::borrow::{BorrowMut};
 
 /// This type provides getter and setter for all SOFT packet fields
 //  Please be careful, it does not perform packet type checks, or size checks
@@ -113,6 +113,10 @@ impl<'a> UncheckedPacketView<'a> {
 
     pub fn error_code(&self) -> SoftErrorCode {
         return num::FromPrimitive::from_u8(self.buf[3]).expect("invalid packet type");
+    }
+
+    pub fn set_error_code(&mut self, val: SoftErrorCode) {
+        self.buf[3] = val as ErrorCodeRaw;
     }
 
     pub fn receive_window(&self) -> ReceiveWindow {
