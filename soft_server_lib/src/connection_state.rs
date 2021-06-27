@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::io::BufReader;
 use std::net::SocketAddr;
 use std::collections::HashMap;
 use soft_shared_lib::{
@@ -6,7 +7,6 @@ use soft_shared_lib::{
     error::Result
 };
 use std::cmp::min;
-use crate::file_io::reader::FileReader;
 
 pub struct ConnectionState {
     connection_id: u32,
@@ -14,21 +14,25 @@ pub struct ConnectionState {
     max_packet_size: u16,
     file_name: String,
     send_buffer: HashMap<SequenceNumber, Vec<u8>>,
-    reader: FileReader,
+    reader: BufReader<File>,
+    file_size: u64,
     last_packet_acknowledged: i128,
     last_packet_sent: i128,
     client_receive_window: ReceiveWindow,
 }
 
 impl ConnectionState {
-    pub fn new(connection_id: u32, addr: SocketAddr, max_packet_size: u16, reader: FileReader) -> Self {
+    pub fn new(connection_id: u32, addr: SocketAddr,
+               max_packet_size: u16, file_name: String,
+               file_size: u64, reader: BufReader<File>) -> Self {
         ConnectionState {
             connection_id,
             addr,
             max_packet_size,
-            file_name: reader.file_name.clone(),
+            file_name,
             send_buffer: HashMap::new(),
             reader,
+            file_size,
             last_packet_acknowledged: -1,
             last_packet_sent: -1,
             client_receive_window: 1,

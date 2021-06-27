@@ -6,7 +6,6 @@ mod connection_state;
 mod connection_pool;
 mod checksum_engine;
 mod data_send_worker;
-mod file_io;
 mod config;
 
 #[cfg(test)]
