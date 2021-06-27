@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::copy;
 use std::{
     collections::HashMap,
-    io::{BufReader, Seek, SeekFrom},
+    io::{BufReader},
     sync::RwLock,
 };
 

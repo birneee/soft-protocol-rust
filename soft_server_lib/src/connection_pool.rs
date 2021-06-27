@@ -3,7 +3,6 @@ use std::io::BufReader;
 use std::net::SocketAddr;
 use std::sync::{RwLock, Arc};
 use crate::connection_state::ConnectionState;
-use soft_shared_lib::error::{ErrorType, Result};
 use std::collections::HashMap;
 use rand::Rng;
 use soft_shared_lib::field_types::{ConnectionId, MaxPacketSize};

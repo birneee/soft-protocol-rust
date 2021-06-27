@@ -4,7 +4,6 @@ use std::net::SocketAddr;
 use std::collections::HashMap;
 use soft_shared_lib::{
     field_types::{SequenceNumber, ReceiveWindow},
-    error::Result
 };
 use std::cmp::min;
 

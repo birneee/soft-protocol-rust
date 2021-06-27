@@ -1,15 +1,9 @@
 use atomic::{Ordering};
-use crate::server_state::{ServerStateType, ServerState};
-use std::sync::{Arc, RwLock};
-use std::net::{UdpSocket, SocketAddr};
-use soft_shared_lib::packet_view::packet_view::PacketView;
-use PacketView::{Req, Acc, Data, Ack};
-use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
+use crate::server_state::{ServerState};
+use std::sync::{Arc};
 use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
 use std::thread;
-use crate::server::SUPPORTED_PROTOCOL_VERSION;
-use crate::connection_state::ConnectionState;
 
 
 /// Server worker that handles outgoing messages
