@@ -7,3 +7,5 @@ edition = "2018"
 soft_shared_lib = { path = "../soft_shared_lib" }
 atomic = "0.5"
 rand = "0.8.4"
+sha2 = "0.9.5"
+hex-literal = "0.3.1"
