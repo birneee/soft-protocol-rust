@@ -43,9 +43,6 @@ impl ChecksumEngine {
         let mut guard = self.cache.write().expect("failed to lock");
         (*guard).insert(file_name.clone(), checksum);
 
-        // reset the file pointer to 0
-        reader.seek(SeekFrom::Start(0))?;
-
         Ok(checksum)
     }
 }
