@@ -6,8 +6,8 @@ use crate::packet::packet_type::PacketType;
 use crate::packet::general_soft_packet::GeneralSoftPacket;
 use crate::packet_view::ack_packet_view::AckPacketView;
 use crate::constants::SOFT_PROTOCOL_VERSION;
-use crate::packet_view::packet_view_error::PacketViewError::UnsupportedVersion;
-use crate::packet_view::packet_view_error::PacketViewError;
+use crate::error::ErrorType::UnsupportedSoftVersion;
+use crate::error::Result;
 
 pub enum PacketView<'a> {
     Req(ReqPacketView<'a>),
@@ -18,10 +18,11 @@ pub enum PacketView<'a> {
 }
 
 impl<'a> PacketView<'a> {
-    pub fn from_buffer(buf: &mut [u8]) -> Result<PacketView, PacketViewError> {
+    /// if version is not supported returns soft_shared_lib::error::ErrorType::UnsupportedSoftVersion
+    pub fn from_buffer(buf: &mut [u8]) -> Result<PacketView> {
         let unchecked = UncheckedPacketView::from_buffer(buf);
         if unchecked.version() != SOFT_PROTOCOL_VERSION {
-            return Err(UnsupportedVersion);
+            return Err(UnsupportedSoftVersion(unchecked.version()));
         }
         Ok(match unchecked.packet_type() {
             PacketType::Req => PacketView::Req(ReqPacketView::from_buffer(buf)),
