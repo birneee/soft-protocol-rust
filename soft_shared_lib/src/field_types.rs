@@ -1,6 +1,6 @@
 pub type Version = u8;
 pub type MaxPacketSize = u16;
-pub type ReceiveWindow = u32;
+pub type ReceiveWindow = u16;
 pub type FileSize = u64;
 pub type ConnectionId = u32;
 pub type Checksum = [u8; 32];
