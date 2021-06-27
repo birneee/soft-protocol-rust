@@ -77,12 +77,12 @@ impl ReceiveWorker {
                             Err(error) => todo!("Map Error type to response builder in a function")
                         };
                         let mut reader = FileReader::new(p.file_name(), file);
+                        let file_size = reader.get_file_size();
                         let checksum = match state.checksum_engine.generate_checksum(&mut reader) {
                             Ok(checksum) => checksum,
                             Err(error) => todo!("Map Error Type to response builder in a function")
                         };
                         let connection_id =  state.connection_pool.add(src, p.max_packet_size(), reader);
-                        //TODO send ACC
                         let buf = AccPacketView::create_packet_buffer(connection_id, file_size, checksum);
                         state.socket.send_to(&buf, src).expect("failed to send");
                     } else {
