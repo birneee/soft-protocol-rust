@@ -12,6 +12,10 @@ pub type NextSequenceNumber = u64;
 /// it might be better to use the enum PacketType
 pub type PacketTypeRaw = u8;
 
+/// this is the raw field type
+/// it might be better to use the enum SoftErrorCode
+pub type ErrorCodeRaw = u8;
+
 /// this types are only used to calculate the packet sizes
 pub type Padding8 = u8;
 pub type Padding16 = u16;
