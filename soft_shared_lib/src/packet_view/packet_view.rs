@@ -4,25 +4,32 @@ use crate::packet_view::err_packet_view::ErrPacketView;
 use crate::packet_view::unchecked_packet_view::UncheckedPacketView;
 use crate::packet::packet_type::PacketType;
 use crate::packet::general_soft_packet::GeneralSoftPacket;
+use crate::packet_view::ack_packet_view::AckPacketView;
+use crate::constants::SOFT_PROTOCOL_VERSION;
+use crate::packet_view::packet_view_error::PacketViewError::UnsupportedVersion;
+use crate::packet_view::packet_view_error::PacketViewError;
 
 pub enum PacketView<'a> {
     Req(ReqPacketView<'a>),
     Acc(AccPacketView<'a>),
     Data(),
-    Ack(),
+    Ack(AckPacketView<'a>),
     Err(ErrPacketView<'a>),
 }
 
 impl<'a> PacketView<'a> {
-    pub fn from_buffer(buf: &mut [u8]) -> PacketView {
+    pub fn from_buffer(buf: &mut [u8]) -> Result<PacketView, PacketViewError> {
         let unchecked = UncheckedPacketView::from_buffer(buf);
-        match unchecked.packet_type() {
+        if unchecked.version() != SOFT_PROTOCOL_VERSION {
+            return Err(UnsupportedVersion);
+        }
+        Ok(match unchecked.packet_type() {
             PacketType::Req => PacketView::Req(ReqPacketView::from_buffer(buf)),
             PacketType::Acc => PacketView::Acc(AccPacketView::from_buffer(buf)),
             PacketType::Data => todo!(),
             PacketType::Ack => todo!(),
             PacketType::Err => PacketView::Err(ErrPacketView::from_buffer(buf)),
-        }
+        })
     }
 }
 
@@ -32,7 +39,7 @@ impl<'a> GeneralSoftPacket for PacketView<'a> {
             PacketView::Req(p) => p.version(),
             PacketView::Acc(p) => p.version(),
             PacketView::Data() => todo!(),
-            PacketView::Ack() => todo!(),
+            PacketView::Ack(p) => p.version(),
             PacketView::Err(p) => p.version(),
         }
     }
@@ -42,7 +49,7 @@ impl<'a> GeneralSoftPacket for PacketView<'a> {
             PacketView::Req(p) => p.packet_type(),
             PacketView::Acc(p) => p.packet_type(),
             PacketView::Data() => todo!(),
-            PacketView::Ack() => todo!(),
+            PacketView::Ack(p) => p.packet_type(),
             PacketView::Err(p) => p.packet_type(),
         }
     }
