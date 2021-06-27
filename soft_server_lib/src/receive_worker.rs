@@ -1,4 +1,12 @@
 use atomic::{Ordering};
+use soft_shared_lib::error::Result;
+use crate::config::FILE_READER_BUFFER_SIZE;
+use crate::{config};
+use crate::server_state::{ServerStateType, ServerState};
+use std::char::MAX;
+use std::fs::File;
+use std::io::BufReader;
+use std::os::unix::prelude::MetadataExt;
 use crate::server_state::{ServerState};
 use std::sync::Arc;
 use std::net::{UdpSocket, SocketAddr};
@@ -15,13 +23,14 @@ use soft_shared_lib::packet_view::packet_view_error::PacketViewError;
 /// Server worker that handles the server logic
 pub struct ReceiveWorker {
     running: Arc<AtomicBool>,
-    join_handle: Option<JoinHandle<()>>,
+    join_handle: Option<JoinHandle<()>>
 }
 
 /// 2^16 bytes - 8 byte UDP header, - 20 byte IP header
 const MAX_PACKET_SIZE: usize = 2usize.pow(16) - 8 - 20;
 
 impl ReceiveWorker {
+
     /// start worker thread
     pub fn start(state: Arc<ServerState>) -> ReceiveWorker {
         let running = Arc::new(AtomicBool::new(true));
@@ -31,6 +40,7 @@ impl ReceiveWorker {
                 Self::work(state, running);
             })
         };
+
         ReceiveWorker {
             running,
             join_handle: Some(join_handle),
@@ -61,14 +71,22 @@ impl ReceiveWorker {
                 }
                 Ok(Req(p)) => {
                     //TODO check if file exists
-                    let file_size = 0;
+                    //TODO do not serve all files
+                    let file = match File::open(p.file_name()) {
+                        Ok(file) => file,
+                        Err(error) => todo!("Map Error type to response builder in a function")
+                    };
+                    let metadata = file.metadata().expect("Unable to query file metadata.");
+                    let file_size = metadata.size();
                     //TODO validate offset
-                    //TODO calculate checksum
-                    let checksum: Checksum = Default::default();
+                    let mut reader = BufReader::with_capacity(FILE_READER_BUFFER_SIZE, file);
+                    let checksum = match state.checksum_engine.generate_checksum(p.file_name(), &mut reader) {
+                        Ok(checksum) => checksum,
+                        Err(error) => todo!("Map Error Type to response builder in a function")
+                    };
                     let connection_id = state.connection_pool.add(src, p.max_packet_size(), p.file_name());
-                    //TODO send ACC
                     let buf = AccPacketView::create_packet_buffer(connection_id, file_size, checksum);
-                    state.socket.send_to(&buf, src).expect("failed to send");
+                    state.socket.send_to(&buf, src).expect(format!("failed to send to {:?}", src).as_str());
                 }
                 Ok(Acc(_)) => {
                     eprintln!("ignore ACC packets");

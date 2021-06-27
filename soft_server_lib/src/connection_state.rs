@@ -1,6 +1,11 @@
+use std::fs::File;
+use std::io::BufReader;
 use std::net::SocketAddr;
 use std::collections::HashMap;
-use soft_shared_lib::field_types::{SequenceNumber, ReceiveWindow};
+use soft_shared_lib::{
+    field_types::{SequenceNumber, ReceiveWindow},
+    error::Result
+};
 use std::cmp::min;
 
 pub struct ConnectionState {
@@ -9,21 +14,27 @@ pub struct ConnectionState {
     max_packet_size: u16,
     file_name: String,
     send_buffer: HashMap<SequenceNumber, Vec<u8>>,
+    reader: BufReader<File>,
+    file_size: u64,
     /// None before receiving ACK 0
     pub last_packet_acknowledged: Option<SequenceNumber>,
     /// None before receiving ACK 0
     pub last_packet_sent: Option<SequenceNumber>,
-    pub client_receive_window: ReceiveWindow,
+    client_receive_window: ReceiveWindow,
 }
 
 impl ConnectionState {
-    pub fn new(connection_id: u32, addr: SocketAddr, max_packet_size: u16, file_name: String) -> Self {
+    pub fn new(connection_id: u32, addr: SocketAddr,
+               max_packet_size: u16, file_name: String,
+               file_size: u64, reader: BufReader<File>) -> Self {
         ConnectionState {
             connection_id,
             addr,
             max_packet_size,
             file_name,
             send_buffer: HashMap::new(),
+            reader,
+            file_size,
             last_packet_acknowledged: None,
             last_packet_sent: None,
             client_receive_window: 1,
