@@ -3,8 +3,8 @@ use std::io::{Cursor, Write, Read};
 use byteorder::{ReadBytesExt, BigEndian, WriteBytesExt};
 use crate::soft_error_code::SoftErrorCode;
 use crate::packet::general_soft_packet::GeneralSoftPacket;
-use crate::field_types::{MaxPacketSize, Version, ConnectionId, FileSize, Checksum, Offset};
-use std::borrow::{BorrowMut, Borrow};
+use crate::field_types::{MaxPacketSize, Version, ConnectionId, FileSize, Checksum, Offset, ReceiveWindow, NextSequenceNumber, ErrorCodeRaw};
+use std::borrow::{BorrowMut};
 
 /// This type provides getter and setter for all SOFT packet fields
 //  Please be careful, it does not perform packet type checks, or size checks
@@ -54,6 +54,12 @@ impl<'a> UncheckedPacketView<'a> {
         let mut c = Cursor::new(&self.buf);
         c.set_position(4);
         return c.read_u64::<BigEndian>().expect("failed to read field");
+    }
+
+    pub fn set_offset(&mut self, val: Offset) {
+        let mut c = Cursor::new(self.buf.borrow_mut());
+        c.set_position(4);
+        c.write_u64::<BigEndian>(val).expect("failed to write field");
     }
 
     /// reads buffer until the end
@@ -107,6 +113,34 @@ impl<'a> UncheckedPacketView<'a> {
 
     pub fn error_code(&self) -> SoftErrorCode {
         return num::FromPrimitive::from_u8(self.buf[3]).expect("invalid packet type");
+    }
+
+    pub fn set_error_code(&mut self, val: SoftErrorCode) {
+        self.buf[3] = val as ErrorCodeRaw;
+    }
+
+    pub fn receive_window(&self) -> ReceiveWindow {
+        let mut c = Cursor::new(&self.buf);
+        c.set_position(2);
+        return c.read_u16::<BigEndian>().expect("failed to read field");
+    }
+
+    pub fn set_receive_window(&mut self, val: ReceiveWindow) {
+        let mut c = Cursor::new(self.buf.borrow_mut());
+        c.set_position(2);
+        c.write_u16::<BigEndian>(val).expect("failed to write field");
+    }
+
+    pub fn next_sequence_number(&self) -> NextSequenceNumber {
+        let mut c = Cursor::new(&self.buf);
+        c.set_position(8);
+        return c.read_u64::<BigEndian>().expect("failed to read field");
+    }
+
+    pub fn set_next_sequence_number(&mut self, val: NextSequenceNumber) {
+        let mut c = Cursor::new(self.buf.borrow_mut());
+        c.set_position(8);
+        c.write_u64::<BigEndian>(val).expect("failed to write field");
     }
 
     //TODO implement missing getter and setter

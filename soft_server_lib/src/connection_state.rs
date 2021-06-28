@@ -4,7 +4,6 @@ use std::net::SocketAddr;
 use std::collections::HashMap;
 use soft_shared_lib::{
     field_types::{SequenceNumber, ReceiveWindow},
-    error::Result
 };
 use std::cmp::min;
 
@@ -16,9 +15,11 @@ pub struct ConnectionState {
     send_buffer: HashMap<SequenceNumber, Vec<u8>>,
     reader: BufReader<File>,
     file_size: u64,
-    last_packet_acknowledged: i128,
-    last_packet_sent: i128,
-    client_receive_window: ReceiveWindow,
+    /// None before receiving ACK 0
+    pub last_packet_acknowledged: Option<SequenceNumber>,
+    /// None before receiving ACK 0
+    pub last_packet_sent: Option<SequenceNumber>,
+    pub client_receive_window: ReceiveWindow,
 }
 
 impl ConnectionState {
@@ -33,8 +34,8 @@ impl ConnectionState {
             send_buffer: HashMap::new(),
             reader,
             file_size,
-            last_packet_acknowledged: -1,
-            last_packet_sent: -1,
+            last_packet_acknowledged: None,
+            last_packet_sent: None,
             client_receive_window: 1,
         }
     }
@@ -48,6 +49,6 @@ impl ConnectionState {
     }
 
     pub fn effective_window(&self) -> usize {
-        return self.max_window() - (self.last_packet_sent - self.last_packet_acknowledged) as usize
+        return self.max_window() - (self.last_packet_sent.unwrap_or(0) - self.last_packet_acknowledged.unwrap_or(0)) as usize
     }
 }

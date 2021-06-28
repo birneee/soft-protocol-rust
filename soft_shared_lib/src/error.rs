@@ -3,6 +3,7 @@ use std::{
     fmt::{self, Display, Formatter},
     result, io
 };
+use crate::field_types::Version;
 
 pub type Result<T> = result::Result<T, ErrorType>;
 
@@ -11,6 +12,7 @@ pub type Result<T> = result::Result<T, ErrorType>;
 pub enum ErrorType {
     IOError(io::Error),
     CouldNotReadHeader(String),
+    UnsupportedSoftVersion(Version),
 }
 
 impl Display for ErrorType {
@@ -25,7 +27,12 @@ impl Display for ErrorType {
                 fmt,
                 "Expected {} header but could not be read from buffer.",
                 header
-            )
+            ),
+            ErrorType::UnsupportedSoftVersion(version) => write!(
+                fmt,
+                "Version {} of the SOFT protocol is not supported by this implementation",
+                version
+            ),
         }
     }
 }
