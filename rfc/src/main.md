@@ -131,18 +131,18 @@ There are various types of timeout values:
 | DATA Packet Retransmission Timeout | 2 RTTs     | Determines the time to wait until a DATA packet is retransmitted if an expected ACK packet is not received. The DATA packet is then retransmitted every 2 RTTs |
 | Connection Timeout                 | 60 seconds | Determines when the connection state is cleaned up, if expected packets are not received even after retransmission                                             |
 | Congestion Window Cache Timeout    | 10 RTTs    | Determines when the entry in the congestion cache is cleaned up (see (#congestion-window-caching))                                                             |
-| Packet Loss Timeout                | 2 RTTs     | Multiple duplicate ACK packets with one sequence number are only interpreted as one packet loss in that timeframe                                                           |
+| Packet Loss Timeout                | 2 RTTs     | Multiple duplicate ACK packets with same sequence number are only interpreted as one packet loss in that time frame                                                           |
 Table: Timeouts
 
 More on how the RTT is calculated can be found in the respective section (#rtt-measurements).
 
 {#rtt-measurements}
 ## Roundtrip Time Measurement
-The client and server have to estimate the RTT to calculate the timeouts (see (#timeout-values)).
+The client and server must estimate the RTT to calculate the timeouts (see (#timeout-values)).
 
 ### Server RTT Measurement
 
-The initial *RTT* is choosen to be 3 seconds. The *RTT* is then updated using a moving average:
+The initial *RTT* is chosen to be 3 seconds. The *RTT* is then updated using a moving average:
 
 {align="center"}
 ~~~
@@ -155,7 +155,7 @@ with *gamma* denoting a constant weighting factor.
 
 The new *RTT* samples are obtained as the time measured between a DATA packets transmission and the reception of its corresponding ACK packet.
 Duplicate ACKs are ignored for the RTT measurement.
-The server can also use the time between the transmittion of the ACC packet and the reception of the ACK 0 packet as a RTT sample.
+The server can also use the time between the transmission of the ACC packet and the reception of the ACK 0 packet as an RTT sample.
 
 ### Client RTT Measurement
 
@@ -338,7 +338,7 @@ Figure: Migration Example
 {#connection-resumption}
 ### Connection Resumption
 This protocol talks about connection resumption, when the client wants to resume a (partial) file download after the state associated with a connection has already been discarded.
-To do this, another three-way handshake for connection establishement has to be performed (see (#connection-initiation)). 
+To do this, another three-way handshake for connection establishment has to be performed (see (#connection-initiation)). 
 The difference between an initial handshake and a resumption handshake is, that the offset communicated is not 0.
 The client sets the offset in the REQ packet to the byte index of the file at which it wants to proceed with the transfer.
 The ACC packet includes a new connection ID and the server's file checksum. 
@@ -347,20 +347,20 @@ This checksum will be compared by the client to its own, previously received sto
 
 Two scenarios may happen:
 
-1. The clients previously stored checksum and the newly received checksum are identical: The file transfer will be resumed. 
-2. The clients previously stored checksum and the new received checksum are not identical: This implies, that the file changed server-side and the next data streams from the server will be inconsistent to the clients received data bytes. The client will therefore send another REQ with OFFSET set to 0 - which tells the server that the file needs to be sent starting from the first byte. 
+1. The client's previously stored checksum and the newly received checksum are identical: The file transfer will be resumed. 
+2. The client's previously stored checksum and the new received checksum are not identical: This implies, that the file changed server-side and the next data streams from the server will be inconsistent to the clients received data bytes. The client will therefore send another REQ with OFFSET set to 0 - which tells the server that the file needs to be sent starting from the first byte. 
 
 {#acknowledgments}
 ## Acknowledgments
 Only DATA packets are acknowledged by the client. 
 SOFT uses positive cumulative forward acknowledgements.
 The client should acknowledge each received DATA packet immediately.
-If the client receives a DATA packet with a higher sequence number than expected, it will immediately send an ACK with the sequence number of the next DATA packet it wants to receive.
-These duplicate ACKs are used by the server to detect packet loss and congestion (see (#congestion-control)).
+If the client receives a DATA packet with a higher sequence number than expected, it will immediately send an ACK packet with the sequence number of the next DATA packet it wants to receive.
+These duplicate ACK packets are used by the server to detect packet loss and congestion (see (#congestion-control)).
 
 
-Because the server might receive many dupliclicate ACKs for the same sequence number, the server should not interpret this as multiple packet losses.
-The server has to use a Packet Loss Timer (see (#timeout-values)), within this time multiple ACKs with the same sequence number do lead to retransmission and halving of the congestion window only once.
+Because the server might receive many duplicate ACK packets for the same sequence number, the server should not interpret this as multiple packet losses.
+The server has to use a Packet Loss Timer (see (#timeout-values)), within this time multiple ACK packets with the same sequence number do lead to retransmission and halving of the congestion window only once.
 
 
 Currently the protocol uses the "go-back-n" strategy in case of packet loss or packets received out of order. This means that if the client receives a DATA packet it is not expecting as the next packet, this packet is discarded and an acknowledgment indicating the sequence number of the next packet expected is sent.
@@ -417,7 +417,7 @@ If the *EffectiveWindow* is greater than 0 more data may be transmitted.
 
 
 The initial congestion window size is set to one maximum packet size (MPS).
-During the slow start phase the congestion window is increased by one MPS per received acknowledgment packet. Eventually, when two duplicate acknowledgments are received, the threshold for congestion avoidance is set to half the size of the last congestion window and the congestion window is adjusted to this size as well.
+During the slow start phase the congestion window is increased by one MPS per received ACK packet. Eventually, when two duplicate ACK packets are received, the threshold for congestion avoidance is set to half the size of the last congestion window and the congestion window is adjusted to this size as well.
 
 ~~~
 Let w(t) be the congestion window size at time t:
@@ -427,7 +427,7 @@ w(t+1) = w(t) + alpha    if no congestion is detected
 w(t+1) = w(t) * beta     if congestion is detected
 ~~~
  
-The additive increase factor *alpha* is chosen to be one maximum packet size. 
+The additive increase factor *alpha* is chosen to be one MPS. 
 The multiplicative decrease factor *beta* is chosen as 1/2 which results in halving the congestion window if congestion is detected.
 
 
@@ -480,7 +480,7 @@ The following table lists all possible fields including their size and encoding.
 | Max Packet Size      | 2 byte               | unsigned integer (Big-Endian) | Maximum SOFT packet size supported by the client                       |
 | Receive Window       | 2 byte               | unsigned integer (Big-Endian) | Number of Packets, the client is able to receive (Flow control)        |
 | File Name            | variable <br/> > 0 byte <br/> <= 484 byte          | UTF-8                         | Length is specified by datagram size                                   |
-| File Size            | 8 byte               | unsigned integer (Big-Endian) | In Bytes                                                               |
+| File Size            | 8 byte               | unsigned integer (Big-Endian) | In bytes                                                               |
 | Connection ID        | 4 byte               | unsigned integer (Big-Endian) |                                                                        |
 | Checksum             | 32 byte              | SHA-256                       |                                                                        |
 | Offset               | 8 byte               | unsigned integer (Big-Endian) | Transfer starts at this byte index of file                             |
@@ -708,7 +708,7 @@ The server should abort the connection with an Error *FILE\_NOT\_FOUND* if acces
 The SOFT protocol has no control over the IP layer beneath the UDP layer. But decisions in the SOFT handshake have consequences on IP packet routing. In general, fragmentation on the IP layer can have significant effect on the robustness of SOFT packet transfer. Using IPv4, a router in the network can fragment the IP packet into smaller IP packets. There is no reliability mechanism on the IP layer, meaning a lost fragment is not resent. As a consequence, the assembled UDP packet will be incomplete and thus UDP silently drops the packet after the checksum computation of the packet. For IPv6, fragmentation and reassembling is only done by the communication endpoints. Thus, IPv6 packets that are too big for a router to be forwarded, are dropped.
 
 
-This SOFT protcol version already provides the possibility to avoid IP layer fragmentation for IPv4 at all. Since 576 Bytes is the minimum MTU size IPv4 hosts must support, the SOFT server can always set the upper limit of the maximum packet size to 496 Bytes when a REQ packet with client's maximum packet size comes in.
+This SOFT protocol version already provides the possibility to avoid IP layer fragmentation for IPv4 at all. Since 576 bytes is the minimum MTU size IPv4 hosts must support, the SOFT server can always set the upper limit of the maximum packet size to 496 bytes when a REQ packet with client's maximum packet size comes in.
 
 Furthermore, the SOFT protocol has a rudimentary feature for the client to probe the maximum SOFT packet size. With the MPS inside the REQ packet of the handshake, the server may agree with this value and starts to send DATA packets with this MPS length. If the client does not receive DATA packets, it can assume that it is due to a too high MPS value that results in IP fragmentation problems. 
 
@@ -718,7 +718,7 @@ A future version of the SOFT protocol may avoid IP layer fragmentation issues by
 {#ipv6-support}
 ## Considerations on IPv6 Support
 
-For IPv6 support, the maximum byte length of the file name in the REQ packet MUST be adapted to the minimial IPv6 packet size network hosts must support. Referring to [@RFC2460] that sets this value to 1280 Bytes and defines that each IPv6 header has 40 bytes, the maximum byte length for a file name is the following:
+For IPv6 support, the maximum byte length of the file name in the REQ packet MUST be adapted to the minimal IPv6 packet size network hosts must support. Referring to [@RFC2460] that sets this value to 1280 bytes and defines that each IPv6 header has 40 bytes, the maximum byte length for a file name is the following:
 
 ~~~
 (1280 - 40 (IPv6 Header) - 20 (UDP Datagram Header) - 12 (SOFT REQ Header)) byte = 1208 byte
