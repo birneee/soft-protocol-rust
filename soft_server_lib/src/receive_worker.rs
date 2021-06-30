@@ -19,6 +19,10 @@ use soft_shared_lib::packet_view::err_packet_view::ErrPacketView;
 use std::path::Path;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use std::cmp::min;
+use soft_shared_lib::soft_error_code::SoftErrorCode::{UnsupportedVersion, FileNotFound, InvalidOffset, Unknown, BadPacket};
+use soft_shared_lib::packet_view::unchecked_packet_view::UncheckedPacketView;
+use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
+use soft_shared_lib::packet::packet_type::PacketType;
 
 static PUBLIC_DIR: &str = "public";
 
@@ -67,16 +71,6 @@ impl ReceiveWorker {
         return (packet, src);
     }
 
-    fn send_error(
-        socket: &UdpSocket,
-        addr: SocketAddr,
-        error: SoftErrorCode,
-        connection_id: Option<ConnectionId>,
-    ) {
-        let buf = ErrPacketView::create_packet_buffer(error, connection_id.unwrap_or(0));
-        socket.send_to(&buf, addr).expect("failed to send");
-    }
-
     /// only server files from the public directory
     fn get_file(file_name: String) -> Result<File> {
         let public_dir = Path::new(PUBLIC_DIR);
@@ -85,106 +79,122 @@ impl ReceiveWorker {
         return Ok(File::open(path)?);
     }
 
+    pub fn handle_packet(state: &Arc<ServerState>, packet: &Result<PacketView>, src: &SocketAddr) -> Option<Vec<u8>>{
+        match packet {
+            Err(UnsupportedSoftVersion(_)) => {
+                return Some(ErrPacketView::create_packet_buffer(UnsupportedVersion, 0));
+            }
+            Err(e) => {
+                eprintln!("unexpected error {}", e);
+                return None;
+            }
+            Ok(Req(p)) => {
+                let file = match Self::get_file(p.file_name()) {
+                    Ok(file) => file,
+                    Err(error) => {
+                        eprintln!("{}", error);
+                        return Some(ErrPacketView::create_packet_buffer(FileNotFound, 0));
+                    }
+                };
+                let metadata = file.metadata().expect("Unable to query file metadata.");
+                let file_size = metadata.size();
+                if p.offset() >= file_size {
+                    return Some(ErrPacketView::create_packet_buffer(InvalidOffset, 0));
+                }
+                let mut reader = BufReader::with_capacity(FILE_READER_BUFFER_SIZE, file);
+                let checksum = match state
+                    .checksum_engine
+                    .generate_checksum(p.file_name(), &mut reader)
+                {
+                    Ok(checksum) => checksum,
+                    Err(error) => {
+                        eprintln!("{}", error);
+                        return Some(ErrPacketView::create_packet_buffer(Unknown, 0));
+                    }
+                };
+                // reset the file pointer to 0
+                if let Err(e) = reader.seek(SeekFrom::Start(0)) {
+                    eprintln!("{}", e);
+                    return Some(ErrPacketView::create_packet_buffer(Unknown, 0));
+                }
+                let connection_id = state.connection_pool.add(
+                    src.clone(),
+                    min(p.max_packet_size(), SERVER_MAX_PACKET_SIZE as MaxPacketSize),
+                    p.file_name(),
+                    file_size,
+                    reader,
+                );
+                return Some(AccPacketView::create_packet_buffer(connection_id, file_size, checksum));
+            }
+            Ok(Acc(_)) => {
+                eprintln!("ignore ACC packets");
+                return None;
+            }
+            Ok(Data()) => {
+                eprintln!("ignore DATA packets");
+                return None;
+            }
+            Ok(Ack(p)) => {
+                if let Some(connection) = state.connection_pool.get(p.connection_id()) {
+                    let mut guard = connection.write().expect("failed to lock");
+                    let next_sequence_number = p.next_sequence_number();
+                    if next_sequence_number == 0 {
+                        // handshake is done
+                        (*guard).client_receive_window = p.receive_window();
+                        //TODO prepare for sending DATA 0
+                        return None;
+                    }
+                    let packet_acknowledged = next_sequence_number - 1;
+                    if packet_acknowledged > (*guard).last_packet_sent.unwrap_or(0) {
+                        // acknowledged sequence number is larger as last sent packet
+                        return Some(ErrPacketView::create_packet_buffer(BadPacket, p.connection_id()));
+                    }
+                    if (*guard).last_packet_acknowledged.is_none() {
+                        // first ack
+                        (*guard).last_packet_acknowledged = Some(packet_acknowledged);
+                        return None;
+                    }
+                    if packet_acknowledged > (*guard).last_packet_acknowledged.unwrap() {
+                        // increasing ack
+                        (*guard).last_packet_acknowledged = Some(packet_acknowledged);
+                        return None;
+                    }
+                    if packet_acknowledged == (*guard).last_packet_acknowledged.unwrap() {
+                        // packet lost
+                        //TODO check packet loss timer
+                        //TODO handle congestion
+                        //TODO prepare for retransmission
+                        return None;
+                    }
+                }
+                return None;
+            }
+            Ok(PacketView::Err(p)) => {
+                eprintln!(
+                    "received error {:?} from connection {}",
+                    p.error_code(),
+                    p.connection_id()
+                );
+                state.connection_pool.drop(p.connection_id());
+                return None;
+            }
+        };
+    }
+
     pub fn work(state: Arc<ServerState>, running: Arc<AtomicBool>) {
         let mut receive_buffer = [0u8; MAX_PACKET_SIZE];
         while running.load(Ordering::SeqCst) {
             let (packet, src) = Self::recv_packet(&state.socket, &mut receive_buffer);
-            match packet {
-                Err(UnsupportedSoftVersion(_)) => {
-                    Self::send_error(&state.socket, src, SoftErrorCode::UnsupportedVersion, None);
-                    continue;
-                }
-                Err(e) => {
-                    eprintln!("unexpected error {}", e);
-                }
-                Ok(Req(p)) => {
-                    //TODO do not serve all files
-                    let file = match Self::get_file(p.file_name()) {
-                        Ok(file) => file,
-                        Err(error) => {
-                            eprintln!("{}", error);
-                            Self::send_error(&state.socket, src, SoftErrorCode::FileNotFound, None);
-                            continue;
-                        }
-                    };
-                    let metadata = file.metadata().expect("Unable to query file metadata.");
-                    let file_size = metadata.size();
-                    if p.offset() >= file_size {
-                        Self::send_error(&state.socket, src, SoftErrorCode::InvalidOffset, None);
-                        continue;
-                    }
-                    let mut reader = BufReader::with_capacity(FILE_READER_BUFFER_SIZE, file);
-                    let checksum = match state
-                        .checksum_engine
-                        .generate_checksum(p.file_name(), &mut reader)
-                    {
-                        Ok(checksum) => checksum,
-                        Err(error) => {
-                            eprintln!("{}", error);
-                            Self::send_error(&state.socket, src, SoftErrorCode::Unknown, None);
-                            continue;
-                        }
-                    };
-                    // reset the file pointer to 0
-                    if let Err(e) = reader.seek(SeekFrom::Start(0)) {
-                        eprintln!("{}", e);
-                        Self::send_error(&state.socket, src, SoftErrorCode::Unknown, None);
-                        continue;
-                    }
-                    let connection_id = state.connection_pool.add(
-                        src,
-                        min(p.max_packet_size(), SERVER_MAX_PACKET_SIZE as MaxPacketSize),
-                        p.file_name(),
-                        file_size,
-                        reader,
-                    );
-                    let buf =
-                        AccPacketView::create_packet_buffer(connection_id, file_size, checksum);
-                    state
-                        .socket
-                        .send_to(&buf, src)
-                        .expect(format!("failed to send to {}", src).as_str());
-                }
-                Ok(Acc(_)) => {
-                    eprintln!("ignore ACC packets");
-                }
-                Ok(Data()) => {
-                    eprintln!("ignore DATA packets");
-                }
-                Ok(Ack(p)) => {
-                    if let Some(connection) = state.connection_pool.get(p.connection_id()) {
-                        let mut guard = connection.write().expect("failed to lock");
-                        (*guard).client_receive_window = p.receive_window();
-                        let next_sequence_number = p.next_sequence_number();
-                        if next_sequence_number >= 1 {
-                            let packet_acknowledged = next_sequence_number - 1;
-                            // check if sequence number is valid
-                            if packet_acknowledged > (*guard).last_packet_sent.unwrap_or(0) {
-                                Self::send_error(
-                                    &state.socket,
-                                    src,
-                                    SoftErrorCode::BadPacket,
-                                    Some(p.connection_id()),
-                                );
-                                continue;
-                            }
-                            if (*guard).last_packet_acknowledged.is_none()
-                                || packet_acknowledged > (*guard).last_packet_acknowledged.unwrap()
-                            {
-                                (*guard).last_packet_acknowledged = Some(packet_acknowledged);
-                            }
-                        }
-                        //TODO detect congestion
-                        //TODO detect packet loss
-                    }
-                }
-                Ok(PacketView::Err(p)) => {
-                    eprintln!(
-                        "received error {:?} from connection {}",
-                        p.error_code(),
-                        p.connection_id()
-                    );
-                    state.connection_pool.drop(p.connection_id());
+            if let Some(mut buf) = Self::handle_packet(&state, &packet, &src) {
+                state
+                    .socket
+                    .send_to(&buf, src)
+                    .expect(format!("failed to send to {}", src).as_str());
+
+                // drop if error
+                let packet = UncheckedPacketView::from_buffer(&mut buf);
+                if packet.packet_type() == PacketType::Err && packet.connection_id() != 0 {
+                    state.connection_pool.drop(packet.connection_id());
                 }
             }
         }
