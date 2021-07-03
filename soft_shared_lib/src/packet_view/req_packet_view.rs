@@ -3,7 +3,7 @@ use crate::packet::packet_type::PacketType;
 use crate::packet_view::unchecked_packet_view::UncheckedPacketView;
 use crate::field_types::{Version, MaxPacketSize, Offset, PacketTypeRaw};
 use std::mem::size_of;
-use crate::constants::SOFT_PROTOCOL_VERSION;
+use crate::constants::{SOFT_PROTOCOL_VERSION, SOFT_MAX_PACKET_SIZE};
 
 pub struct ReqPacketView<'a> {
     inner: UncheckedPacketView<'a>,
@@ -20,7 +20,9 @@ impl<'a> ReqPacketView<'a> {
     }
 
     pub fn create_packet_buffer(max_packet_size: MaxPacketSize, file_name: &str) -> Vec<u8> {
-        let mut buf = vec![0u8; Self::get_required_buffer_size(&file_name)];
+        let size = Self::get_required_buffer_size(&file_name);
+        assert!(size <= SOFT_MAX_PACKET_SIZE);
+        let mut buf = vec![0u8; size];
         let mut view = UncheckedPacketView::from_buffer(buf.as_mut_slice());
         view.set_version(SOFT_PROTOCOL_VERSION);
         view.set_packet_type(PacketType::Req);
@@ -43,6 +45,14 @@ impl<'a> ReqPacketView<'a> {
 
     pub fn set_max_packet_size(&mut self, val: MaxPacketSize) {
         self.inner.set_max_packet_size(val);
+    }
+
+    pub fn offset(&self) -> Offset {
+        self.inner.offset()
+    }
+
+    pub fn set_offset(&mut self, val: Offset) {
+        self.inner.set_offset(val);
     }
 
     pub fn file_name(&self) -> String {

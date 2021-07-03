@@ -8,4 +8,5 @@ pub enum SoftErrorCode {
     InvalidOffset = 5,
     UnsupportedVersion = 6,
     FileChanged = 7,
+    BadPacket = 8,
 }
