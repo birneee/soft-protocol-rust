@@ -9,6 +9,7 @@ use crate::constants::SOFT_PROTOCOL_VERSION;
 use crate::error::ErrorType::UnsupportedSoftVersion;
 use crate::error::Result;
 
+/// Union type of all packet views
 pub enum PacketView<'a> {
     Req(ReqPacketView<'a>),
     Acc(AccPacketView<'a>),
