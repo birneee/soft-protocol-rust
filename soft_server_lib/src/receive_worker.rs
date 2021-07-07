@@ -12,11 +12,9 @@ use PacketView::{Req, Acc, Data, Ack};
 use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
 use std::thread;
-use soft_shared_lib::field_types::{ConnectionId, MaxPacketSize};
+use soft_shared_lib::field_types::MaxPacketSize;
 use soft_shared_lib::packet_view::acc_packet_view::AccPacketView;
-use soft_shared_lib::soft_error_code::SoftErrorCode;
 use soft_shared_lib::packet_view::err_packet_view::ErrPacketView;
-use std::path::Path;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use std::cmp::min;
 use soft_shared_lib::soft_error_code::SoftErrorCode::{UnsupportedVersion, FileNotFound, InvalidOffset, Unknown, BadPacket};
@@ -24,7 +22,6 @@ use soft_shared_lib::packet_view::unchecked_packet_view::UncheckedPacketView;
 use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
 use soft_shared_lib::packet::packet_type::PacketType;
 
-static PUBLIC_DIR: &str = "public";
 
 /// Server worker that handles the server logic
 pub struct ReceiveWorker {
@@ -72,10 +69,9 @@ impl ReceiveWorker {
     }
 
     /// only server files from the public directory
-    fn get_file(file_name: String) -> Result<File> {
-        let public_dir = Path::new(PUBLIC_DIR);
-        let path = public_dir.join(file_name);
-        assert!(path.starts_with(public_dir));
+    fn get_file(server_state: &ServerState, file_name: String) -> Result<File> {
+        let path = server_state.served_dir.join(file_name);
+        assert!(path.starts_with(&server_state.served_dir));
         return Ok(File::open(path)?);
     }
 
@@ -89,7 +85,7 @@ impl ReceiveWorker {
                 return None;
             }
             Ok(Req(p)) => {
-                let file = match Self::get_file(p.file_name()) {
+                let file = match Self::get_file(state,p.file_name()) {
                     Ok(file) => file,
                     Err(error) => {
                         eprintln!("{}", error);
