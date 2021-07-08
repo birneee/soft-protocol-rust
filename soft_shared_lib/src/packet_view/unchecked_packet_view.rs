@@ -6,8 +6,8 @@ use crate::packet::general_soft_packet::GeneralSoftPacket;
 use crate::field_types::{MaxPacketSize, Version, ConnectionId, FileSize, Checksum, Offset, ReceiveWindow, NextSequenceNumber, ErrorCodeRaw};
 use std::borrow::{BorrowMut};
 
-/// This type provides getter and setter for all SOFT packet fields
-//  Please be careful, it does not perform packet type checks, or size checks
+/// This type provides getter and setter for all SOFT packet fields.
+/// Please be careful, it does not perform packet type checks, or size checks.
 pub struct UncheckedPacketView<'a>{
     buf: &'a mut [u8]
 }
@@ -18,7 +18,7 @@ impl<'a> GeneralSoftPacket for UncheckedPacketView<'a> {
     }
 
     fn packet_type(&self) -> PacketType {
-        return num::FromPrimitive::from_u8(self.buf[1]).expect("invalid packet type");
+        return PacketType::from_raw(self.buf[1]);
     }
 }
 
@@ -35,7 +35,7 @@ impl<'a> UncheckedPacketView<'a> {
     }
 
     pub fn set_packet_type(&mut self, val: PacketType) {
-        self.buf[1] = val as u8;
+        self.buf[1] = val.to_raw();
     }
 
     pub fn max_packet_size(&self) -> MaxPacketSize {

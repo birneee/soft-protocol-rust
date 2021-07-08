@@ -1,3 +1,6 @@
+use crate::field_types::PacketTypeRaw;
+
+/// All possible packet type field values
 #[derive(Debug, Copy, Clone, PartialEq, FromPrimitive)]
 pub enum PacketType {
     /// the file request packet,
@@ -18,4 +21,16 @@ pub enum PacketType {
     /// is sent when client or server
     /// want to abort the connection
     Err = 4
+}
+
+impl PacketType {
+
+    pub fn from_raw(value: PacketTypeRaw) -> PacketType {
+        return num::FromPrimitive::from_u8(value).expect("invalid packet type");
+    }
+
+    pub fn to_raw(self) -> PacketTypeRaw{
+        return self as u8;
+    }
+
 }
