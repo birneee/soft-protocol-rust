@@ -3,6 +3,12 @@ use soft_server_lib::server::Server;
 use soft_server_lib::server_state::ServerStateType;
 use std::thread::sleep;
 use std::time::Duration;
+use std::path::PathBuf;
+use std::convert::TryFrom;
+
+static DEFAULT_ARG_SERVED_DIR: &str = "./public";
+
+static DEFAULT_ARG_PORT: &str = "9840";
 
 fn main() {
     let matches = App::new("SOFT Protocol Server CLI")
@@ -13,17 +19,27 @@ fn main() {
             .long("port")
             .value_name("PORT")
             .help("The port to opened for incoming connections")
-            .required(true) //TODO: Determine default port
+            .default_value(DEFAULT_ARG_PORT)
         )
+        .arg(Arg::with_name("serve")
+        .short("s")
+        .long("serve")
+        .value_name("SERVE")
+        .help("The directory to be served by the server")
+        .default_value(DEFAULT_ARG_SERVED_DIR)
+    )
         .get_matches();
 
     let port = matches
         .value_of("port").expect("port not specified")
         .parse().expect("invalid port");
 
-    let server = Server::start_with_port(port);
+    let served_dir = PathBuf::try_from(matches
+        .value_of("serve").expect("served directory is not specified")).expect("invalid served directory");
 
-    println!("server is listening on port {}", port);
+    let server = Server::start_with_port(port, served_dir.clone());
+
+    println!("server is listening on port {}, serving {}", port, served_dir.to_str().unwrap());
 
     println!("Press Ctrl-C to stop server...");
 

@@ -4,6 +4,7 @@ use crate::receive_worker::ReceiveWorker;
 use std::sync::Arc;
 use std::net::{SocketAddr, Ipv4Addr, IpAddr, UdpSocket};
 use crate::data_send_worker::DataSendWorker;
+use std::path::PathBuf;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 
@@ -14,12 +15,27 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn start_with_port(port: u16) -> Server {
-        return Self::start(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port));
+    /// Start server
+    ///
+    /// The server stops automatically when the returned value drops
+    ///
+    /// # Arguments
+    /// * `port` - The port to listen on
+    /// * `served_dir` - The directory to serve
+    pub fn start_with_port(port: u16, served_dir: PathBuf) -> Server {
+        return Self::start(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port), served_dir);
     }
-    pub fn start(addr: SocketAddr) -> Server {
+
+    /// Start server
+    ///
+    /// The server stops automatically when the returned value drops
+    ///
+    /// # Arguments
+    /// * `addr` - The address to listen on
+    /// * `served_dir` - The directory to serve
+    pub fn start(addr: SocketAddr, served_dir: PathBuf) -> Server {
         let socket = UdpSocket::bind(addr).expect("failed to bind UDP socket");
-        let state = Arc::new(ServerState::new(socket));
+        let state = Arc::new(ServerState::new(socket, served_dir));
 
         Server {
             receive_worker: ReceiveWorker::start(state.clone()),
