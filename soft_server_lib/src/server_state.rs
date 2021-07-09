@@ -2,6 +2,8 @@ use atomic::Atomic;
 use std::{net::UdpSocket};
 use crate::{checksum_engine::ChecksumEngine, connection_pool::ConnectionPool};
 use std::path::PathBuf;
+use crate::congestion_cache::CongestionCache;
+use std::sync::Arc;
 
 pub struct ServerState {
     pub state_type: Atomic<ServerStateType>,
@@ -9,6 +11,7 @@ pub struct ServerState {
     pub connection_pool: ConnectionPool,
     pub checksum_engine: ChecksumEngine,
     pub served_dir: PathBuf,
+    pub congestion_cache: Arc<CongestionCache>,
 }
 
 impl ServerState {
@@ -19,6 +22,7 @@ impl ServerState {
             connection_pool: ConnectionPool::new(),
             checksum_engine: ChecksumEngine::new(),
             served_dir,
+            congestion_cache: Arc::new(CongestionCache::new())
         }
     }
 }
