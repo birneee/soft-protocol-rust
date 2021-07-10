@@ -21,6 +21,7 @@ use soft_shared_lib::soft_error_code::SoftErrorCode::{UnsupportedVersion, FileNo
 use soft_shared_lib::packet_view::unchecked_packet_view::UncheckedPacketView;
 use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
 use soft_shared_lib::packet::packet_type::PacketType;
+use std::time::Instant;
 
 
 /// Server worker that handles the server logic
@@ -75,6 +76,7 @@ impl ReceiveWorker {
         return Ok(File::open(path)?);
     }
 
+    /// might return some buffer that is sent back to that client
     pub fn handle_packet(state: &Arc<ServerState>, packet: &Result<PacketView>, src: &SocketAddr) -> Option<Vec<u8>>{
         match packet {
             Err(UnsupportedSoftVersion(_)) => {
@@ -119,6 +121,7 @@ impl ReceiveWorker {
                     p.file_name(),
                     file_size,
                     reader,
+                    state.congestion_cache.clone()
                 );
                 return Some(AccPacketView::create_packet_buffer(connection_id, file_size, checksum));
             }
@@ -148,18 +151,21 @@ impl ReceiveWorker {
                     if (*guard).last_packet_acknowledged.is_none() {
                         // first ack
                         (*guard).last_packet_acknowledged = Some(packet_acknowledged);
+                        guard.increase_congestion_window();
                         return None;
                     }
                     if packet_acknowledged > (*guard).last_packet_acknowledged.unwrap() {
                         // increasing ack
                         (*guard).last_packet_acknowledged = Some(packet_acknowledged);
+                        guard.increase_congestion_window();
                         return None;
                     }
                     if packet_acknowledged == (*guard).last_packet_acknowledged.unwrap() {
-                        // packet lost
-                        //TODO check packet loss timer
-                        //TODO handle congestion
-                        //TODO prepare for retransmission
+                        if Instant::now() > (*guard).packet_loss_timeout {
+                            // packet lost
+                            guard.decrease_congestion_window();
+                            //TODO prepare for retransmission
+                        }
                         return None;
                     }
                 }

@@ -6,6 +6,7 @@ use crate::connection_state::ConnectionState;
 use std::collections::HashMap;
 use rand::Rng;
 use soft_shared_lib::field_types::{ConnectionId, MaxPacketSize};
+use crate::congestion_cache::CongestionCache;
 
 pub struct ConnectionPool {
     map: RwLock<HashMap<u32, Arc<RwLock<ConnectionState>>>>
@@ -36,10 +37,10 @@ impl ConnectionPool {
         (*guard).get(&connection_id).map(|arc| { arc.clone() })
     }
 
-    pub fn add(&self, src: SocketAddr, max_packet_size: MaxPacketSize, file_name: String, file_size: u64, reader: BufReader<File>) -> ConnectionId {
+    pub fn add(&self, src: SocketAddr, max_packet_size: MaxPacketSize, file_name: String, file_size: u64, reader: BufReader<File>, congestion_cache: Arc<CongestionCache>) -> ConnectionId {
         let mut guard = self.map.write().expect("failed to lock");
         let connection_id = Self::generate_connection_id(&*guard);
-        let state = ConnectionState::new(connection_id, src, max_packet_size, file_name, file_size, reader);
+        let state = ConnectionState::new(connection_id, src, max_packet_size, file_name, file_size, reader, congestion_cache);
         (*guard).insert(connection_id, Arc::new(RwLock::new(state)));
         return connection_id;
     }

@@ -5,6 +5,7 @@ pub mod soft_error_code;
 pub mod packet_view;
 pub mod field_types;
 mod sha256_helper;
+pub mod times;
 
 #[macro_use]
 extern crate num_derive;
