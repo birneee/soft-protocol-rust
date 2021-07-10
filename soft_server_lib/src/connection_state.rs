@@ -13,7 +13,8 @@ use soft_shared_lib::field_types::{MaxPacketSize, ConnectionId, FileSize};
 
 pub struct ConnectionState {
     connection_id: ConnectionId,
-    addr: SocketAddr,
+    /// might change on migration
+    client_addr: SocketAddr,
     max_packet_size: MaxPacketSize,
     file_name: String,
     send_buffer: HashMap<SequenceNumber, Vec<u8>>,
@@ -25,17 +26,16 @@ pub struct ConnectionState {
     pub last_packet_sent: Option<SequenceNumber>,
     pub client_receive_window: ReceiveWindow,
     congestion_cache: Arc<CongestionCache>,
-    pub current_src_addr: SocketAddr,
     pub packet_loss_timeout: Instant,
 }
 
 impl ConnectionState {
     pub fn new(connection_id: u32, addr: SocketAddr,
                max_packet_size: u16, file_name: String,
-               file_size: u64, reader: BufReader<File>, congestion_cache: Arc<CongestionCache>, current_src_addr: SocketAddr) -> Self {
+               file_size: u64, reader: BufReader<File>, congestion_cache: Arc<CongestionCache>) -> Self {
         ConnectionState {
             connection_id,
-            addr,
+            client_addr: addr,
             max_packet_size,
             file_name,
             send_buffer: HashMap::new(),
@@ -45,13 +45,12 @@ impl ConnectionState {
             last_packet_sent: None,
             client_receive_window: 1,
             congestion_cache,
-            current_src_addr,
             packet_loss_timeout: Instant::now()
         }
     }
 
     pub fn congestion_window(&self) -> CongestionWindow {
-        return self.congestion_cache.congestion_window(self.current_src_addr, self.max_packet_size);
+        return self.congestion_cache.congestion_window(self.client_addr, self.max_packet_size);
     }
 
     pub fn max_window(&self) -> u16 {
@@ -63,15 +62,15 @@ impl ConnectionState {
     }
 
     pub fn current_rtt(&self) -> Duration {
-        return self.congestion_cache.current_rtt(self.current_src_addr, self.max_packet_size);
+        return self.congestion_cache.current_rtt(self.client_addr, self.max_packet_size);
     }
 
     pub fn increase_congestion_window(&self) {
-        self.congestion_cache.increase(self.current_src_addr, self.max_packet_size);
+        self.congestion_cache.increase(self.client_addr, self.max_packet_size);
     }
 
     pub fn decrease_congestion_window(&self) {
-        self.congestion_cache.decrease(self.current_src_addr, self.max_packet_size);
+        self.congestion_cache.decrease(self.client_addr, self.max_packet_size);
     }
 
 }

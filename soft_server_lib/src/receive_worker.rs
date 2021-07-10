@@ -121,8 +121,7 @@ impl ReceiveWorker {
                     p.file_name(),
                     file_size,
                     reader,
-                    state.congestion_cache.clone(),
-                    src.clone()
+                    state.congestion_cache.clone()
                 );
                 return Some(AccPacketView::create_packet_buffer(connection_id, file_size, checksum));
             }
