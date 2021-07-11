@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use sha2::{Sha256, Sha512, Digest};
+    use sha2::{Sha256, Digest};
     use std::convert::TryInto;
     use hex_literal::hex;
 
