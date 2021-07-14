@@ -22,6 +22,7 @@ use soft_shared_lib::packet_view::unchecked_packet_view::UncheckedPacketView;
 use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
 use soft_shared_lib::packet::packet_type::PacketType;
 use std::time::Instant;
+use soft_shared_lib::helper::range_helper::{compare_range, RangeCompare};
 
 
 /// Server worker that handles the server logic
@@ -137,39 +138,34 @@ impl ReceiveWorker {
                 if let Some(connection) = state.connection_pool.get(p.connection_id()) {
                     let mut guard = connection.write().expect("failed to lock");
                     let next_sequence_number = p.next_sequence_number();
-                    if next_sequence_number == 0 {
-                        // handshake is done
-                        (*guard).client_receive_window = p.receive_window();
-                        //TODO prepare for sending DATA 0
-                        return None;
-                    }
-                    let packet_acknowledged = next_sequence_number - 1;
-                    if packet_acknowledged > (*guard).last_packet_sent.unwrap_or(0) {
-                        // acknowledged sequence number is larger as last sent packet
-                        return Some(ErrPacketView::create_packet_buffer(BadPacket, p.connection_id()));
-                    }
-                    if (*guard).last_packet_acknowledged.is_none() {
-                        // first ack
-                        (*guard).last_packet_acknowledged = Some(packet_acknowledged);
-                        guard.increase_congestion_window();
-                        return None;
-                    }
-                    if packet_acknowledged > (*guard).last_packet_acknowledged.unwrap() {
-                        // increasing ack
-                        (*guard).last_packet_acknowledged = Some(packet_acknowledged);
-                        guard.increase_congestion_window();
-                        return None;
-                    }
-                    if packet_acknowledged == (*guard).last_packet_acknowledged.unwrap() {
-                        if Instant::now() > (*guard).packet_loss_timeout {
-                            // packet lost
-                            guard.decrease_congestion_window();
-                            //TODO prepare for retransmission
+                    let expected_forward_acks = guard.expected_forward_acks();
+                    match compare_range(&expected_forward_acks, next_sequence_number) {
+                        RangeCompare::LOWER => {
+                            if next_sequence_number == guard.last_forward_acknowledgement.unwrap() {
+                                if Instant::now() > guard.packet_loss_timeout {
+                                    // packet lost
+                                    guard.packet_loss_timeout = Instant::now();
+                                    guard.decrease_congestion_window();
+                                    //TODO prepare for retransmission
+                                }
+                                return None;
+                            }
+                            // ignore lower sequence numbers
                         }
-                        return None;
+                        RangeCompare::CONTAINED => {
+                            // normal sequential ack
+                            guard.client_receive_window = p.receive_window();
+                            guard.last_forward_acknowledgement = Some(next_sequence_number);
+                            guard.increase_congestion_window();
+                            return None;
+                        }
+                        RangeCompare::HIGHER => {
+                            // acknowledged sequence number is larger as last sent packet
+                            return Some(ErrPacketView::create_packet_buffer(BadPacket, p.connection_id()));
+                        }
                     }
                 }
-                return None;
+                return None; // ignore because there is no such connection id
             }
             Ok(PacketView::Err(p)) => {
                 eprintln!(

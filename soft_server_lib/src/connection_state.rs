@@ -10,6 +10,7 @@ use std::time::{Instant, Duration};
 use crate::congestion_cache::{CongestionCache, CongestionWindow};
 use std::sync::Arc;
 use soft_shared_lib::field_types::{MaxPacketSize, ConnectionId, FileSize};
+use std::ops::Range;
 
 pub struct ConnectionState {
     connection_id: ConnectionId,
@@ -21,8 +22,8 @@ pub struct ConnectionState {
     reader: BufReader<File>,
     file_size: FileSize,
     /// None before receiving ACK 0
-    pub last_packet_acknowledged: Option<SequenceNumber>,
-    /// None before receiving ACK 0
+    pub last_forward_acknowledgement: Option<SequenceNumber>,
+    /// None before sending DATA 0
     pub last_packet_sent: Option<SequenceNumber>,
     pub client_receive_window: ReceiveWindow,
     congestion_cache: Arc<CongestionCache>,
@@ -41,11 +42,43 @@ impl ConnectionState {
             send_buffer: HashMap::new(),
             reader,
             file_size,
-            last_packet_acknowledged: None,
+            last_forward_acknowledgement: None,
             last_packet_sent: None,
             client_receive_window: 1,
             congestion_cache,
             packet_loss_timeout: Instant::now()
+        }
+    }
+
+    /// last_packet_forward_acknowledged - 1
+    /// None if last_packet_forward_acknowledged = Some(0)
+    /// None if last_packet_forward_acknowledged = None
+    pub fn last_packet_acknowledged(&self) -> Option<SequenceNumber> {
+        return if let Some(num) = self.last_forward_acknowledgement {
+            if num == 0 {
+                None
+            } else {
+                Some(num - 1)
+            }
+        } else {
+            None
+        }
+    }
+
+    /// true if ACK 0 has been received
+    pub fn is_handshake_completed(&self) -> bool {
+        return self.last_forward_acknowledgement.is_some();
+    }
+
+    /// expected ACK packets to receive
+    ///
+    /// packets below the range indicate required retransmission or should be ignored
+    ///
+    /// packets above the range are bad packets and should lead to an error
+    pub fn expected_forward_acks(&self) -> Range<SequenceNumber> {
+        return Range{
+            start: self.last_forward_acknowledgement.map(|num| num + 1).unwrap_or(0),
+            end: self.last_packet_sent.map(|num| num + 2).unwrap_or(1)
         }
     }
 
@@ -58,7 +91,7 @@ impl ConnectionState {
     }
 
     pub fn effective_window(&self) -> u16 {
-        return self.max_window() - (self.last_packet_sent.unwrap_or(0) - self.last_packet_acknowledged.unwrap_or(0)) as u16
+        return self.max_window() - (self.last_packet_sent.unwrap_or(0) - self.last_packet_acknowledged().unwrap_or(0)) as u16
     }
 
     pub fn current_rtt(&self) -> Duration {
