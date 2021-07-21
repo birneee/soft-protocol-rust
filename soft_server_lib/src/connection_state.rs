@@ -13,13 +13,13 @@ use soft_shared_lib::field_types::{MaxPacketSize, ConnectionId, FileSize};
 use std::ops::Range;
 
 pub struct ConnectionState {
-    connection_id: ConnectionId,
+    pub connection_id: ConnectionId,
     /// might change on migration
-    client_addr: SocketAddr,
-    max_packet_size: MaxPacketSize,
+    pub client_addr: SocketAddr,
+    pub max_packet_size: MaxPacketSize,
     file_name: String,
-    send_buffer: HashMap<SequenceNumber, Vec<u8>>,
-    reader: BufReader<File>,
+    pub data_send_buffer: HashMap<SequenceNumber, Vec<u8>>,
+    pub reader: BufReader<File>,
     file_size: FileSize,
     /// None before receiving ACK 0
     pub last_forward_acknowledgement: Option<SequenceNumber>,
@@ -39,7 +39,7 @@ impl ConnectionState {
             client_addr: addr,
             max_packet_size,
             file_name,
-            send_buffer: HashMap::new(),
+            data_send_buffer: HashMap::new(),
             reader,
             file_size,
             last_forward_acknowledgement: None,

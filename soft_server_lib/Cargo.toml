@@ -9,3 +9,7 @@ atomic = "0.5"
 rand = "0.8.4"
 sha2 = "0.9.5"
 hex-literal = "0.3.1"
+
+[dev-dependencies]
+tempdir = "0.3.7"
+hex-literal = "0.3.1"

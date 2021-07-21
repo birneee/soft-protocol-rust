@@ -8,12 +8,13 @@ use crate::packet_view::ack_packet_view::AckPacketView;
 use crate::constants::SOFT_PROTOCOL_VERSION;
 use crate::error::ErrorType::UnsupportedSoftVersion;
 use crate::error::Result;
+use crate::packet_view::data_packet_view::DataPacketView;
 
 /// Union type of all packet views
 pub enum PacketView<'a> {
     Req(ReqPacketView<'a>),
     Acc(AccPacketView<'a>),
-    Data(),
+    Data(DataPacketView<'a>),
     Ack(AckPacketView<'a>),
     Err(ErrPacketView<'a>),
 }
@@ -28,8 +29,8 @@ impl<'a> PacketView<'a> {
         Ok(match unchecked.packet_type() {
             PacketType::Req => PacketView::Req(ReqPacketView::from_buffer(buf)),
             PacketType::Acc => PacketView::Acc(AccPacketView::from_buffer(buf)),
-            PacketType::Data => todo!(),
-            PacketType::Ack => todo!(),
+            PacketType::Data => PacketView::Data(DataPacketView::from_buffer(buf)),
+            PacketType::Ack => PacketView::Ack(AckPacketView::from_buffer(buf)),
             PacketType::Err => PacketView::Err(ErrPacketView::from_buffer(buf)),
         })
     }
@@ -40,7 +41,7 @@ impl<'a> GeneralSoftPacket for PacketView<'a> {
         match self {
             PacketView::Req(p) => p.version(),
             PacketView::Acc(p) => p.version(),
-            PacketView::Data() => todo!(),
+            PacketView::Data(p) => p.version(),
             PacketView::Ack(p) => p.version(),
             PacketView::Err(p) => p.version(),
         }
@@ -50,7 +51,7 @@ impl<'a> GeneralSoftPacket for PacketView<'a> {
         match self {
             PacketView::Req(p) => p.packet_type(),
             PacketView::Acc(p) => p.packet_type(),
-            PacketView::Data() => todo!(),
+            PacketView::Data(p) => p.packet_type(),
             PacketView::Ack(p) => p.packet_type(),
             PacketView::Err(p) => p.packet_type(),
         }
