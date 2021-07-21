@@ -3,10 +3,10 @@ use soft_shared_lib::error::Result;
 use crate::config::{FILE_READER_BUFFER_SIZE, SERVER_MAX_PACKET_SIZE};
 use crate::server_state::{ServerState};
 use std::fs::File;
-use std::io::{BufReader, SeekFrom, Seek};
+use std::io::{BufReader, SeekFrom, Seek, ErrorKind};
 use std::os::unix::prelude::MetadataExt;
 use std::sync::Arc;
-use std::net::{UdpSocket, SocketAddr};
+use std::net::{SocketAddr};
 use soft_shared_lib::packet_view::packet_view::PacketView;
 use PacketView::{Req, Acc, Data, Ack};
 use std::thread::JoinHandle;
@@ -17,7 +17,7 @@ use soft_shared_lib::packet_view::acc_packet_view::AccPacketView;
 use soft_shared_lib::packet_view::err_packet_view::ErrPacketView;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use std::cmp::min;
-use soft_shared_lib::soft_error_code::SoftErrorCode::{UnsupportedVersion, FileNotFound, InvalidOffset, Unknown, BadPacket};
+use soft_shared_lib::soft_error_code::SoftErrorCode::{UnsupportedVersion, FileNotFound, InvalidOffset, Unknown};
 use soft_shared_lib::packet_view::unchecked_packet_view::UncheckedPacketView;
 use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
 use soft_shared_lib::packet::packet_type::PacketType;
@@ -58,16 +58,6 @@ impl ReceiveWorker {
         self.join_handle
             .take().expect("failed to take handle")
             .join().expect("failed to join thread");
-    }
-
-    /// if version is not supported returns soft_shared_lib::error::ErrorType::UnsupportedSoftVersion
-    fn recv_packet<'a>(
-        socket: &UdpSocket,
-        receive_buffer: &'a mut [u8; MAX_PACKET_SIZE],
-    ) -> (Result<PacketView<'a>>, SocketAddr) {
-        let (size, src) = socket.recv_from(receive_buffer).expect("failed to receive");
-        let packet = PacketView::from_buffer(&mut receive_buffer[0..size]);
-        return (packet, src);
     }
 
     /// only server files from the public directory
@@ -130,7 +120,7 @@ impl ReceiveWorker {
                 eprintln!("ignore ACC packets");
                 return None;
             }
-            Ok(Data()) => {
+            Ok(Data(_)) => {
                 eprintln!("ignore DATA packets");
                 return None;
             }
@@ -146,7 +136,8 @@ impl ReceiveWorker {
                                     // packet lost
                                     guard.packet_loss_timeout = Instant::now();
                                     guard.decrease_congestion_window();
-                                    //TODO prepare for retransmission
+                                    // reduce in flight packets to trigger retransmission
+                                    guard.last_packet_sent = guard.last_packet_acknowledged();
                                 }
                                 return None;
                             }
@@ -157,11 +148,12 @@ impl ReceiveWorker {
                             guard.client_receive_window = p.receive_window();
                             guard.last_forward_acknowledgement = Some(next_sequence_number);
                             guard.increase_congestion_window();
+                            //TODO remove packets from send buffer
                             return None;
                         }
                         RangeCompare::HIGHER => {
-                            // acknowledged sequence number is larger as last sent packet
-                            return Some(ErrPacketView::create_packet_buffer(BadPacket, p.connection_id()));
+                            // ignore, this might be caused by retransmission
+                            return None
                         }
                     }
                 }
@@ -179,20 +171,34 @@ impl ReceiveWorker {
         };
     }
 
+    /// loop that is sequentially handling incoming messages
     pub fn work(state: Arc<ServerState>, running: Arc<AtomicBool>) {
         let mut receive_buffer = [0u8; MAX_PACKET_SIZE];
         while running.load(Ordering::SeqCst) {
-            let (packet, src) = Self::recv_packet(&state.socket, &mut receive_buffer);
-            if let Some(mut buf) = Self::handle_packet(&state, &packet, &src) {
-                state
-                    .socket
-                    .send_to(&buf, src)
-                    .expect(format!("failed to send to {}", src).as_str());
+            match state.socket.recv_from(&mut receive_buffer) {
+                Ok((size, src)) => {
+                    let packet = PacketView::from_buffer(&mut receive_buffer[0..size]);
+                    if let Some(mut buf) = Self::handle_packet(&state, &packet, &src) {
+                        state
+                            .socket
+                            .send_to(&buf, src)
+                            .expect(format!("failed to send to {}", src).as_str());
 
-                // drop if error
-                let packet = UncheckedPacketView::from_buffer(&mut buf);
-                if packet.packet_type() == PacketType::Err && packet.connection_id() != 0 {
-                    state.connection_pool.drop(packet.connection_id());
+                        // drop if error
+                        let packet = UncheckedPacketView::from_buffer(&mut buf);
+                        if packet.packet_type() == PacketType::Err && packet.connection_id() != 0 {
+                            state.connection_pool.drop(packet.connection_id());
+                        }
+                    }
+                }
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    // caused by read timeout
+                    // required for checking if worker should be stopped
+                    continue;
+                }
+                Err(e) => {
+                    eprintln!("{}", e);
+                    panic!("failed to receive");
                 }
             }
         }
