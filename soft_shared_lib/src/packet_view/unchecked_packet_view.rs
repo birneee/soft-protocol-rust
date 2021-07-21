@@ -3,7 +3,7 @@ use std::io::{Cursor, Write, Read};
 use byteorder::{ReadBytesExt, BigEndian, WriteBytesExt};
 use crate::soft_error_code::SoftErrorCode;
 use crate::packet::general_soft_packet::GeneralSoftPacket;
-use crate::field_types::{MaxPacketSize, Version, ConnectionId, FileSize, Checksum, Offset, ReceiveWindow, NextSequenceNumber, ErrorCodeRaw};
+use crate::field_types::{MaxPacketSize, Version, ConnectionId, FileSize, Checksum, Offset, ReceiveWindow, NextSequenceNumber, ErrorCodeRaw, SequenceNumber};
 use std::borrow::{BorrowMut};
 
 /// This type provides getter and setter for all SOFT packet fields.
@@ -131,17 +131,44 @@ impl<'a> UncheckedPacketView<'a> {
         c.write_u16::<BigEndian>(val).expect("failed to write field");
     }
 
+    /// for ACK packets
     pub fn next_sequence_number(&self) -> NextSequenceNumber {
         let mut c = Cursor::new(&self.buf);
         c.set_position(8);
         return c.read_u64::<BigEndian>().expect("failed to read field");
     }
 
+    /// for ACK packets
     pub fn set_next_sequence_number(&mut self, val: NextSequenceNumber) {
         let mut c = Cursor::new(self.buf.borrow_mut());
         c.set_position(8);
         c.write_u64::<BigEndian>(val).expect("failed to write field");
     }
 
-    //TODO implement missing getter and setter
+    /// for DATA packets
+    pub fn sequence_number(&self) -> SequenceNumber {
+        let mut c = Cursor::new(&self.buf);
+        c.set_position(8);
+        return c.read_u64::<BigEndian>().expect("failed to read field");
+    }
+
+    /// for DATA packets
+    pub fn set_sequence_number(&mut self, val: NextSequenceNumber) {
+        let mut c = Cursor::new(self.buf.borrow_mut());
+        c.set_position(8);
+        c.write_u64::<BigEndian>(val).expect("failed to write field");
+    }
+
+    /// for DATA packets
+    pub fn data(&self) -> &[u8] {
+        return &self.buf[16..];
+    }
+
+    /// for DATA packets
+    pub fn set_data(&mut self, val: &[u8]) {
+        let mut c = Cursor::new(self.buf.borrow_mut());
+        c.set_position(16);
+        c.write_all(val).expect("failed to write field");
+    }
+
 }
