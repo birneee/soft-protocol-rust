@@ -109,8 +109,8 @@ impl ReceiveWorker {
                 let connection_id = state.connection_pool.add(
                     src.clone(),
                     min(p.max_packet_size(), SERVER_MAX_PACKET_SIZE as MaxPacketSize),
-                    p.file_name(),
-                    file_size,
+                    //p.file_name(),
+                    //file_size,
                     reader,
                     state.congestion_cache.clone()
                 );
