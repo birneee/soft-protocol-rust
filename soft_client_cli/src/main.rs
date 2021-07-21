@@ -1,4 +1,4 @@
-use clap::{Arg, App, SubCommand};
+use clap::{Arg, App};
 
 fn main() {
     let matches = App::new("SOFT Protocol Client CLI")
@@ -26,9 +26,9 @@ fn main() {
             .default_value("TBD")) //TODO: Determine default port
         .get_matches();
     
-    let mut target = matches.value_of("target").unwrap();
-    let mut port = matches.value_of("port").unwrap();
-    let mut filename = matches.value_of("filename").unwrap();
+    let target = matches.value_of("target").unwrap();
+    let port = matches.value_of("port").unwrap();
+    let filename = matches.value_of("filename").unwrap();
 
     println!("Connection: {} on Port {}: {}", target, port, filename);
 
