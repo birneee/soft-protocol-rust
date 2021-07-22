@@ -12,6 +12,17 @@ macro_rules! log_stop {
     };
 }
 
+/// # Arguments
+/// * `client_addr` - of type std::net::SocketAddr
+/// * `new_congestion_window` - of type u16
+#[macro_export]
+macro_rules! log_updated_congestion_window {
+    ($client_addr:expr, $new_congestion_window:expr) => {
+        log::debug!("updated congestion window of {} to {}", $client_addr, $new_congestion_window);
+    };
+}
+
+/// packet of type soft_shared_lib::packet_view::PacketView
 #[macro_export]
 macro_rules! log_packet_sent {
     ($packet:expr) => {
@@ -24,6 +35,7 @@ macro_rules! log_packet_sent {
     };
 }
 
+/// packet of type soft_shared_lib::packet_view::PacketView
 #[macro_export]
 macro_rules! log_packet_received {
     ($packet:expr) => {
@@ -36,6 +48,7 @@ macro_rules! log_packet_received {
     };
 }
 
+/// connection_state of type &soft_server_lib::ConnectionState
 #[macro_export]
 macro_rules! log_new_connection {
     ($connection_state:expr) => {
