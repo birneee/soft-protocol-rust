@@ -1,9 +1,10 @@
 use crate::packet::general_soft_packet::GeneralSoftPacket;
 use crate::packet::packet_type::PacketType;
 use crate::packet_view::unchecked_packet_view::UncheckedPacketView;
-use crate::field_types::{Version, MaxPacketSize, Offset, PacketTypeRaw};
+use crate::field_types::{Version, MaxPacketSize, Offset, PacketTypeRaw, ConnectionId};
 use std::mem::size_of;
 use crate::constants::{SOFT_PROTOCOL_VERSION, SOFT_MAX_PACKET_SIZE};
+use std::fmt::{Display, Formatter};
 
 pub struct ReqPacketView<'a> {
     inner: UncheckedPacketView<'a>,
@@ -71,5 +72,26 @@ impl<'a> GeneralSoftPacket for ReqPacketView<'a> {
 
     fn packet_type(&self) -> PacketType {
         self.inner.packet_type()
+    }
+
+    fn buf(&self) -> &[u8] {
+        self.inner.buf()
+    }
+
+    fn connection_id_or_none(&self) -> Option<ConnectionId> {
+        None
+    }
+}
+
+impl<'a> Display for ReqPacketView<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Req {{ version: {},  max_packet_size: {}, offset: {}, file_name: {} }}",
+            self.version(),
+            self.max_packet_size(),
+            self.offset(),
+            self.file_name(),
+        )
     }
 }

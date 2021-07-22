@@ -5,6 +5,8 @@ use crate::packet_view::unchecked_packet_view::UncheckedPacketView;
 use std::mem::size_of;
 use crate::field_types::{Version, PacketTypeRaw, ErrorCodeRaw, Padding8, ConnectionId};
 use crate::constants::SOFT_PROTOCOL_VERSION;
+use std::fmt::{Display, Formatter};
+use crate::packet_view::data_packet_view::DataPacketView;
 
 pub struct ErrPacketView<'a> {
     inner: UncheckedPacketView<'a>,
@@ -61,5 +63,25 @@ impl<'a> GeneralSoftPacket for ErrPacketView<'a> {
 
     fn packet_type(&self) -> PacketType {
         self.inner.packet_type()
+    }
+
+    fn buf(&self) -> &[u8] {
+        self.inner.buf()
+    }
+
+    fn connection_id_or_none(&self) -> Option<ConnectionId> {
+        Some(self.connection_id())
+    }
+}
+
+impl<'a> Display for ErrPacketView<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Err {{ version: {},  connection_id: {}, error_code: {} }}",
+            self.version(),
+            self.connection_id(),
+            self.error_code() as u8,
+        )
     }
 }

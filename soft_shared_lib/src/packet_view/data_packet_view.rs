@@ -4,6 +4,7 @@ use crate::packet_view::unchecked_packet_view::UncheckedPacketView;
 use crate::field_types::{ConnectionId, Version, PacketTypeRaw, Padding16, SequenceNumber};
 use std::mem::size_of;
 use crate::constants::{SOFT_PROTOCOL_VERSION, SOFT_MAX_PACKET_SIZE};
+use std::fmt::{Display, Formatter};
 
 pub struct DataPacketView<'a> {
     inner: UncheckedPacketView<'a>,
@@ -65,5 +66,26 @@ impl<'a> GeneralSoftPacket for DataPacketView<'a> {
 
     fn packet_type(&self) -> PacketType {
         self.inner.packet_type()
+    }
+
+    fn buf(&self) -> &[u8] {
+        self.inner.buf()
+    }
+
+    fn connection_id_or_none(&self) -> Option<ConnectionId> {
+        Some(self.connection_id())
+    }
+}
+
+impl<'a> Display for DataPacketView<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Data {{ version: {},  connection_id: {}, sequence_number: {}, data: ({} bytes) }}",
+            self.version(),
+            self.connection_id(),
+            self.sequence_number(),
+            self.data().len()
+        )
     }
 }
