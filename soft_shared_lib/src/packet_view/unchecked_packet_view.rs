@@ -25,6 +25,10 @@ impl<'a> GeneralSoftPacket for UncheckedPacketView<'a> {
         self.buf
     }
 
+    fn mut_buf(&mut self) -> &mut [u8] {
+        self.buf
+    }
+
     fn connection_id_or_none(&self) -> Option<ConnectionId> {
         return if self.packet_type() == PacketType::Req {
             None

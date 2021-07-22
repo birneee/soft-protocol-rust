@@ -8,6 +8,8 @@ pub trait GeneralSoftPacket {
     fn packet_type(&self) -> PacketType;
     /// get the byte representation of the packet
     fn buf(&self) -> &[u8];
+    /// get the mutable underlying buffer
+    fn mut_buf(&mut self) -> &mut [u8];
     /// get connection id if the packet has such a field
     fn connection_id_or_none(&self) -> Option<ConnectionId>;
 }

@@ -38,6 +38,10 @@ impl<'a> ErrPacketView<'a> {
         }
     }
 
+    pub fn from_packet(packet: & mut dyn GeneralSoftPacket) -> ErrPacketView {
+        return Self::from_buffer(packet.mut_buf());
+    }
+
     pub fn error_code(&self) -> SoftErrorCode {
         self.inner.error_code()
     }
@@ -66,6 +70,10 @@ impl<'a> GeneralSoftPacket for ErrPacketView<'a> {
 
     fn buf(&self) -> &[u8] {
         self.inner.buf()
+    }
+
+    fn mut_buf(&mut self) -> &mut [u8] {
+        self.inner.mut_buf()
     }
 
     fn connection_id_or_none(&self) -> Option<ConnectionId> {

@@ -39,6 +39,10 @@ impl<'a> AckPacketView<'a> {
         }
     }
 
+    pub fn from_packet(packet: & mut dyn GeneralSoftPacket) -> AckPacketView {
+        return Self::from_buffer(packet.mut_buf());
+    }
+
     pub fn connection_id(&self) -> ConnectionId {
         self.inner.connection_id()
     }
@@ -75,6 +79,10 @@ impl<'a> GeneralSoftPacket for AckPacketView<'a> {
 
     fn buf(&self) -> &[u8] {
         self.inner.buf()
+    }
+
+    fn mut_buf(&mut self) -> &mut [u8] {
+        self.inner.mut_buf()
     }
 
     fn connection_id_or_none(&self) -> Option<ConnectionId> {
