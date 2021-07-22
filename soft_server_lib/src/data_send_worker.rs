@@ -9,6 +9,8 @@ use soft_shared_lib::field_types::SequenceNumber;
 use soft_shared_lib::packet_view::data_packet_view::DataPacketView;
 use std::io::{Read};
 use crate::data_send_worker::ReadResult::Eof;
+use soft_shared_lib::packet_view::packet_view::PacketView;
+use crate::log_packet_sent;
 
 
 /// Server worker that handles outgoing messages
@@ -44,6 +46,7 @@ impl DataSendWorker {
 
     pub fn work(state: Arc<ServerState>, running: Arc<AtomicBool>) {
         while running.load(Ordering::SeqCst) {
+            //TODO stop or delay if no connection is open
             match state.connection_pool.get_any_with_effective_window() {
                 None => {}
                 Some(connection_state) => {
@@ -64,8 +67,9 @@ impl DataSendWorker {
                                     //TODO handle error
                                     break
                                 }
-                                ReadResult::Ok(buf) => {
+                                ReadResult::Ok(mut buf) => {
                                     state.socket.send_to(&buf, guard.client_addr).expect("failed to send packet");
+                                    log_packet_sent!(&PacketView::from_buffer(&mut buf).unwrap());
                                     guard.data_send_buffer.insert(sequence_number, buf);
                                     guard.last_packet_sent = Some(sequence_number);
                                 }

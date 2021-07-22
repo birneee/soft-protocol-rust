@@ -6,6 +6,7 @@ use std::net::{SocketAddr, Ipv4Addr, IpAddr, UdpSocket, ToSocketAddrs};
 use crate::data_send_worker::DataSendWorker;
 use std::path::PathBuf;
 use std::time::Duration;
+use crate::log_start;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 /// the server will block the thread for this time when
@@ -39,6 +40,9 @@ impl Server {
     pub fn start<A: ToSocketAddrs>(addr: A, served_dir: PathBuf) -> Server {
         let socket = UdpSocket::bind(addr).expect("failed to bind UDP socket");
         socket.set_read_timeout(Some(SOCKET_READ_TIMEOUT)).unwrap();
+
+        log_start!(socket.local_addr().unwrap().port(), served_dir.to_str().unwrap());
+
         let state = Arc::new(ServerState::new(socket, served_dir));
 
         Server {
@@ -83,6 +87,7 @@ mod tests {
     use std::io::Write;
     use hex_literal::hex;
     use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
+    use log::LevelFilter;
 
     #[test]
     /// test server connection acceptance
@@ -92,6 +97,8 @@ mod tests {
         const FILE_CHECKSUM: [u8; 32] = hex!("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08");
         const FILE_SIZE: u64 = 4;
         const SOFT_VERSION: u8 = 1;
+
+        env_logger::builder().filter_level(LevelFilter::Debug).init();
 
         let served_dir = TempDir::new("soft_test").unwrap();
         let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();

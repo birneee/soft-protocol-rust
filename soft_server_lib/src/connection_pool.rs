@@ -37,12 +37,12 @@ impl ConnectionPool {
         (*guard).get(&connection_id).map(|arc| { arc.clone() })
     }
 
-    pub fn add(&self, src: SocketAddr, max_packet_size: MaxPacketSize, file_name: String, file_size: u64, reader: BufReader<File>, congestion_cache: Arc<CongestionCache>) -> ConnectionId {
+    pub fn add(&self, src: SocketAddr, max_packet_size: MaxPacketSize, file_name: String, file_size: u64, reader: BufReader<File>, congestion_cache: Arc<CongestionCache>) -> Arc<RwLock<ConnectionState>> {
         let mut guard = self.map.write().expect("failed to lock");
         let connection_id = Self::generate_connection_id(&*guard);
-        let state = ConnectionState::new(connection_id, src, max_packet_size, file_name, file_size, reader, congestion_cache);
-        (*guard).insert(connection_id, Arc::new(RwLock::new(state)));
-        return connection_id;
+        let state = Arc::new(RwLock::new(ConnectionState::new(connection_id, src, max_packet_size, file_name, file_size, reader, congestion_cache)));
+        (*guard).insert(connection_id, state.clone());
+        return state;
     }
 
     pub fn drop(&self, connection_id: ConnectionId) {

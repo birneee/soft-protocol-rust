@@ -19,11 +19,10 @@ use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use std::cmp::min;
 use soft_shared_lib::soft_error_code::SoftErrorCode::{UnsupportedVersion, FileNotFound, InvalidOffset, Unknown};
 use soft_shared_lib::packet_view::unchecked_packet_view::UncheckedPacketView;
-use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
 use soft_shared_lib::packet::packet_type::PacketType;
 use std::time::Instant;
 use soft_shared_lib::helper::range_helper::{compare_range, RangeCompare};
-
+use crate::{log_packet_sent, log_new_connection, log_packet_received};
 
 /// Server worker that handles the server logic
 pub struct ReceiveWorker {
@@ -106,7 +105,7 @@ impl ReceiveWorker {
                     eprintln!("{}", e);
                     return Some(ErrPacketView::create_packet_buffer(Unknown, 0));
                 }
-                let connection_id = state.connection_pool.add(
+                let connection_lock = state.connection_pool.add(
                     src.clone(),
                     min(p.max_packet_size(), SERVER_MAX_PACKET_SIZE as MaxPacketSize),
                     p.file_name(),
@@ -114,7 +113,9 @@ impl ReceiveWorker {
                     reader,
                     state.congestion_cache.clone()
                 );
-                return Some(AccPacketView::create_packet_buffer(connection_id, file_size, checksum));
+                let connection = connection_lock.read().unwrap();
+                log_new_connection!(&connection);
+                return Some(AccPacketView::create_packet_buffer(connection.connection_id, file_size, checksum));
             }
             Ok(Acc(_)) => {
                 eprintln!("ignore ACC packets");
@@ -178,13 +179,18 @@ impl ReceiveWorker {
             match state.socket.recv_from(&mut receive_buffer) {
                 Ok((size, src)) => {
                     let packet = PacketView::from_buffer(&mut receive_buffer[0..size]);
+                    if let Ok(packet) = &packet{
+                        log_packet_received!(&packet);
+                    }
                     if let Some(mut buf) = Self::handle_packet(&state, &packet, &src) {
                         state
                             .socket
                             .send_to(&buf, src)
                             .expect(format!("failed to send to {}", src).as_str());
 
-                        // drop if error
+                        log_packet_sent!(&PacketView::from_buffer(&mut buf).unwrap());
+
+                        // drop connection if error
                         let packet = UncheckedPacketView::from_buffer(&mut buf);
                         if packet.packet_type() == PacketType::Err && packet.connection_id() != 0 {
                             state.connection_pool.drop(packet.connection_id());

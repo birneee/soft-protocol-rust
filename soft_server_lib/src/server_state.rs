@@ -22,7 +22,7 @@ impl ServerState {
             connection_pool: ConnectionPool::new(),
             checksum_engine: ChecksumEngine::new(),
             served_dir,
-            congestion_cache: Arc::new(CongestionCache::new())
+            congestion_cache: Arc::new(CongestionCache::new()),
         }
     }
 }
