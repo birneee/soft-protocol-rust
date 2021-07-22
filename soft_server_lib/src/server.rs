@@ -6,7 +6,7 @@ use std::net::{SocketAddr, Ipv4Addr, IpAddr, UdpSocket, ToSocketAddrs};
 use crate::data_send_worker::DataSendWorker;
 use std::path::PathBuf;
 use std::time::Duration;
-use crate::log_start;
+use crate::{log_start, log_stop};
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 /// the server will block the thread for this time when
@@ -58,6 +58,7 @@ impl Server {
         self.receive_worker.stop();
         self.data_send_worker.stop();
         self.state.state_type.store(ServerStateType::Stopped, Ordering::SeqCst);
+        log_stop!();
     }
 
     pub fn state(&self) -> ServerStateType {

@@ -1,7 +1,14 @@
 #[macro_export]
 macro_rules! log_start {
     ($port:expr, $served_dir:expr) => {
-        log::info!("server is listening on port {}, serving {}", $port, $served_dir);
+        log::info!("server start listening on port {}, serving {}", $port, $served_dir);
+    };
+}
+
+#[macro_export]
+macro_rules! log_stop {
+    () => {
+        log::info!("server stopped");
     };
 }
 
