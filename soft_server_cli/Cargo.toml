@@ -9,3 +9,4 @@ soft_server_lib = { path = "../soft_server_lib" }
 clap = "2.33.3"
 log = "0.4.14"
 env_logger = "0.9.0"
+crossterm = "0.20.0"

@@ -1,11 +1,9 @@
 use clap::{Arg, App};
 use soft_server_lib::server::Server;
-use soft_server_lib::server_state::ServerStateType;
-use std::thread::sleep;
-use std::time::Duration;
 use std::path::PathBuf;
 use std::convert::TryFrom;
-use log::LevelFilter;
+use log::{LevelFilter, info};
+use crossterm::event::Event::Key;
 
 static DEFAULT_ARG_SERVED_DIR: &str = "./public";
 
@@ -47,21 +45,24 @@ fn main() {
 
     if matches.is_present("verbose") {
         env_logger::builder().filter_level(LevelFilter::Debug).init();
+    } else {
+        env_logger::builder().filter_level(LevelFilter::Info).init();
     }
 
     let server = Server::start_with_port(port, served_dir.clone());
 
-    println!("server is listening on port {}, serving {}", port, served_dir.to_str().unwrap());
-
-    println!("Press Ctrl-C to stop server...");
-
-    //TODO implement graceful stop
-
-    while server.state() == ServerStateType::Running {
-        sleep(Duration::from_millis(200));
-    }
+    info!("Press any key to stop server...");
+    wait_for_any_key();
 
     drop(server); // stop server
+}
 
-    println!("server stopped");
+fn wait_for_any_key() {
+    crossterm::terminal::enable_raw_mode().unwrap();
+    loop {
+        if let Key(_) = crossterm::event::read().unwrap() {
+            break;
+        }
+    }
+    crossterm::terminal::disable_raw_mode().unwrap();
 }
