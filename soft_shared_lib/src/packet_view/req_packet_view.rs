@@ -40,6 +40,10 @@ impl<'a> ReqPacketView<'a> {
         }
     }
 
+    pub fn from_packet(packet: & mut dyn GeneralSoftPacket) -> ReqPacketView {
+        return Self::from_buffer(packet.mut_buf());
+    }
+
     pub fn max_packet_size(&self) -> MaxPacketSize {
         self.inner.max_packet_size()
     }
@@ -76,6 +80,10 @@ impl<'a> GeneralSoftPacket for ReqPacketView<'a> {
 
     fn buf(&self) -> &[u8] {
         self.inner.buf()
+    }
+
+    fn mut_buf(&mut self) -> &mut [u8] {
+        self.inner.mut_buf()
     }
 
     fn connection_id_or_none(&self) -> Option<ConnectionId> {

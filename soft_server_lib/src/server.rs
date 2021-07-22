@@ -85,14 +85,22 @@ mod tests {
     use soft_shared_lib::packet_view::acc_packet_view::AccPacketView;
     use std::time::Duration;
     use std::fs::File;
-    use std::io::Write;
+    use std::io::{Write, ErrorKind};
     use hex_literal::hex;
     use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
     use log::LevelFilter;
+    use soft_shared_lib::packet_view::ack_packet_view::AckPacketView;
+    use soft_shared_lib::packet_view::data_packet_view::DataPacketView;
+    use soft_shared_lib::packet_view::packet_view::PacketView;
+
+    fn receive<'a>(client_socket: &UdpSocket, receive_buffer: &'a mut [u8]) -> PacketView<'a>{
+        let size = client_socket.recv(receive_buffer).unwrap();
+        return PacketView::from_buffer(&mut receive_buffer[..size]).unwrap();
+    }
 
     #[test]
     /// test server connection acceptance
-    fn accept() {
+    fn handshake() {
         const FILE_NAME: &str = "hello.txt";
         const FILE_CONTENT: &str = "test";
         const FILE_CHECKSUM: [u8; 32] = hex!("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08");
@@ -106,16 +114,44 @@ mod tests {
         file.write(FILE_CONTENT.as_bytes()).unwrap();
         let server = Server::start("127.0.0.1:0", served_dir.into_path());
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-        client_socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
-        let req_packet_buf = ReqPacketView::create_packet_buffer(100, "hello.txt");
-        client_socket.send_to(&req_packet_buf, server.local_addr()).unwrap();
+        client_socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
         let mut receive_buffer = [0u8; 100];
-        let size = client_socket.recv(&mut receive_buffer).unwrap();
-        let acc_packet = AccPacketView::from_buffer(&mut receive_buffer[..size]);
-        let _connection_id = acc_packet.connection_id();
+        // send Req
+        client_socket.send_to(
+            &ReqPacketView::create_packet_buffer(
+                100,
+                "hello.txt"
+            ),
+            server.local_addr()
+        ).unwrap();
+        // receive Acc
+        let mut packet = receive(&client_socket, &mut receive_buffer);
+        let acc_packet = AccPacketView::from_packet(&mut packet);
+        let connection_id = acc_packet.connection_id();
         assert_eq!(acc_packet.version(), SOFT_VERSION);
         assert_eq!(acc_packet.file_size(), FILE_SIZE);
         assert_eq!(acc_packet.checksum(), FILE_CHECKSUM);
+        drop(acc_packet);
+        // server should send nothing here
+        assert_eq!(client_socket.recv(&mut []).err().map(|e| e.kind()), Some(ErrorKind::WouldBlock));
+        // send Ack 0
+        client_socket.send_to(
+            &AckPacketView::create_packet_buffer(
+                10,
+                connection_id,
+                0
+            ),
+            server.local_addr()
+        ).unwrap();
+        // receive Data
+        let mut packet = receive(&client_socket, &mut receive_buffer);
+        let data_packet = DataPacketView::from_packet(&mut packet);
+        let connection_id = data_packet.connection_id();
+        assert_eq!(data_packet.connection_id(), connection_id);
+        assert_eq!(data_packet.sequence_number(), 0);
+        assert_eq!(data_packet.data().len(), 4);
+        assert_eq!(std::str::from_utf8(data_packet.data()).unwrap(), FILE_CONTENT);
+        // stop server
         drop(server);
     }
 }

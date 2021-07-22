@@ -69,6 +69,16 @@ impl<'a> GeneralSoftPacket for PacketView<'a> {
         }
     }
 
+    fn mut_buf(&mut self) -> &mut [u8] {
+        match self {
+            PacketView::Req(p) => p.mut_buf(),
+            PacketView::Acc(p) => p.mut_buf(),
+            PacketView::Data(p) => p.mut_buf(),
+            PacketView::Ack(p) => p.mut_buf(),
+            PacketView::Err(p) => p.mut_buf(),
+        }
+    }
+
     fn connection_id_or_none(&self) -> Option<ConnectionId> {
         match self {
             PacketView::Req(p) => p.connection_id_or_none(),
