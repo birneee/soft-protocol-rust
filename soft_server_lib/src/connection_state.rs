@@ -46,7 +46,7 @@ impl ConnectionState {
             //file_size,
             last_forward_acknowledgement: None,
             last_packet_sent: None,
-            client_receive_window: 1,
+            client_receive_window: 0,
             congestion_cache,
             packet_loss_timeout: Instant::now()
         }
