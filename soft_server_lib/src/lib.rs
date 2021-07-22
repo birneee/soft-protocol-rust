@@ -7,11 +7,4 @@ mod connection_pool;
 mod checksum_engine;
 mod data_send_worker;
 mod config;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+mod logger;
