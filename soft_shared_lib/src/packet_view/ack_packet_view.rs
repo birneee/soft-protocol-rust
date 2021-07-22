@@ -4,6 +4,7 @@ use crate::field_types::{Version, PacketTypeRaw, ReceiveWindow, ConnectionId, Ne
 use crate::packet::packet_type::PacketType;
 use std::mem::size_of;
 use crate::constants::SOFT_PROTOCOL_VERSION;
+use std::fmt::{Display, Formatter};
 
 pub struct AckPacketView<'a> {
     inner: UncheckedPacketView<'a>,
@@ -70,5 +71,26 @@ impl<'a> GeneralSoftPacket for AckPacketView<'a> {
 
     fn packet_type(&self) -> PacketType {
         self.inner.packet_type()
+    }
+
+    fn buf(&self) -> &[u8] {
+        self.inner.buf()
+    }
+
+    fn connection_id_or_none(&self) -> Option<ConnectionId> {
+        Some(self.connection_id())
+    }
+}
+
+impl<'a> Display for AckPacketView<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Ack {{ version: {},  connection_id: {}, receive_window: {}, next_sequence_number: {} }}",
+            self.version(),
+            self.connection_id(),
+            self.receive_window(),
+            self.next_sequence_number()
+        )
     }
 }

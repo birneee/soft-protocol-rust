@@ -5,6 +5,7 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::path::PathBuf;
 use std::convert::TryFrom;
+use log::LevelFilter;
 
 static DEFAULT_ARG_SERVED_DIR: &str = "./public";
 
@@ -22,12 +23,19 @@ fn main() {
             .default_value(DEFAULT_ARG_PORT)
         )
         .arg(Arg::with_name("serve")
-        .short("s")
-        .long("serve")
-        .value_name("SERVE")
-        .help("The directory to be served by the server")
-        .default_value(DEFAULT_ARG_SERVED_DIR)
-    )
+            .short("s")
+            .long("serve")
+            .value_name("SERVE")
+            .help("The directory to be served by the server")
+            .default_value(DEFAULT_ARG_SERVED_DIR)
+        )
+        .arg(Arg::with_name("verbose")
+            .short("v")
+            .long("verbose")
+            .value_name("VERBOSE")
+            .help("server prints execution details")
+            .takes_value(false)
+        )
         .get_matches();
 
     let port = matches
@@ -36,6 +44,10 @@ fn main() {
 
     let served_dir = PathBuf::try_from(matches
         .value_of("serve").expect("served directory is not specified")).expect("invalid served directory");
+
+    if matches.is_present("verbose") {
+        env_logger::builder().filter_level(LevelFilter::Debug).init();
+    }
 
     let server = Server::start_with_port(port, served_dir.clone());
 
