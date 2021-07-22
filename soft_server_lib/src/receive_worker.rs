@@ -148,6 +148,7 @@ impl ReceiveWorker {
                             // normal sequential ack
                             guard.client_receive_window = p.receive_window();
                             guard.last_forward_acknowledgement = Some(next_sequence_number);
+                            //TODO maybe should not increase on Ack 0
                             guard.increase_congestion_window();
                             //TODO remove packets from send buffer
                             return None;
