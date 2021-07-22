@@ -6,7 +6,6 @@ use std::mem::size_of;
 use crate::field_types::{Version, PacketTypeRaw, ErrorCodeRaw, Padding8, ConnectionId};
 use crate::constants::SOFT_PROTOCOL_VERSION;
 use std::fmt::{Display, Formatter};
-use crate::packet_view::data_packet_view::DataPacketView;
 
 pub struct ErrPacketView<'a> {
     inner: UncheckedPacketView<'a>,

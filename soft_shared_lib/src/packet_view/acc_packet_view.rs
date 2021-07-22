@@ -4,7 +4,7 @@ use crate::packet_view::unchecked_packet_view::UncheckedPacketView;
 use crate::field_types::{ConnectionId, FileSize, Checksum, Version, PacketTypeRaw, Padding16};
 use std::mem::size_of;
 use crate::constants::SOFT_PROTOCOL_VERSION;
-use std::fmt::{Display, Formatter, Pointer, Write, Debug};
+use std::fmt::{Display, Formatter};
 use crate::helper::sha256_helper::sha256_to_hex_string;
 
 pub struct AccPacketView<'a> {

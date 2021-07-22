@@ -5,7 +5,6 @@ use crate::soft_error_code::SoftErrorCode;
 use crate::packet::general_soft_packet::GeneralSoftPacket;
 use crate::field_types::{MaxPacketSize, Version, ConnectionId, FileSize, Checksum, Offset, ReceiveWindow, NextSequenceNumber, ErrorCodeRaw, SequenceNumber};
 use std::borrow::{BorrowMut};
-use std::fs::read;
 
 /// This type provides getter and setter for all SOFT packet fields.
 /// Please be careful, it does not perform packet type checks, or size checks.

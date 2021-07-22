@@ -9,7 +9,7 @@ use crate::constants::SOFT_PROTOCOL_VERSION;
 use crate::error::ErrorType::UnsupportedSoftVersion;
 use crate::error::Result;
 use crate::packet_view::data_packet_view::DataPacketView;
-use std::fmt::{Display, Formatter, Pointer};
+use std::fmt::{Display, Formatter};
 use crate::field_types::ConnectionId;
 
 /// Union type of all packet views
