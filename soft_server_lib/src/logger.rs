@@ -60,3 +60,14 @@ macro_rules! log_new_connection {
     };
 }
 
+/// connection_id of type u32
+#[macro_export]
+macro_rules! log_closed_connection {
+    ($connection_id:expr) => {
+        log::debug!(
+            "closed connection {}",
+            $connection_id
+        )
+    };
+}
+
