@@ -23,6 +23,7 @@ use soft_shared_lib::packet::packet_type::PacketType;
 use std::time::Instant;
 use soft_shared_lib::helper::range_helper::{compare_range, RangeCompare};
 use crate::{log_packet_sent, log_new_connection, log_packet_received};
+use log::debug;
 
 /// Server worker that handles the server logic
 pub struct ReceiveWorker {
@@ -128,6 +129,11 @@ impl ReceiveWorker {
             Ok(Ack(p)) => {
                 if let Some(connection) = state.connection_pool.get(p.connection_id()) {
                     let mut guard = connection.write().expect("failed to lock");
+                    if *src != guard.client_addr {
+                        // migration
+                        guard.client_addr = src.clone();
+                        debug!("connection {} migrated to {}", guard.connection_id, src);
+                    }
                     let next_sequence_number = p.next_sequence_number();
                     let expected_forward_acks = guard.expected_forward_acks();
                     match compare_range(&expected_forward_acks, next_sequence_number) {
@@ -165,7 +171,7 @@ impl ReceiveWorker {
                 return None; // ignore because there is no such connection id
             }
             Ok(PacketView::Err(p)) => {
-                eprintln!(
+                debug!(
                     "received error {:?} from connection {}",
                     p.error_code(),
                     p.connection_id()

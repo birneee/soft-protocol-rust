@@ -94,6 +94,8 @@ mod tests {
     use soft_shared_lib::field_types::{MaxPacketSize, FileSize};
     use test_case::test_case;
     use soft_shared_lib::helper::sha256_helper::sha256_from_bytes;
+    use soft_shared_lib::constants::SOFT_MAX_PACKET_SIZE;
+    use log::LevelFilter;
 
     fn receive<'a>(client_socket: &UdpSocket, receive_buffer: &'a mut [u8]) -> PacketView<'a>{
         let size = client_socket.recv(receive_buffer).unwrap();
@@ -109,13 +111,15 @@ mod tests {
         const FILE_SIZE: u64 = 4;
         const SOFT_VERSION: u8 = 1;
 
+        //let _ = env_logger::builder().filter_level(LevelFilter::Debug).try_init();
+
         let served_dir = TempDir::new("soft_test").unwrap();
         let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
         file.write(file_content.as_bytes()).unwrap();
         let server = Server::start("127.0.0.1:0", served_dir.into_path());
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         client_socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
-        let mut receive_buffer = [0u8; 100];
+        let mut receive_buffer = [0u8; SOFT_MAX_PACKET_SIZE];
         // send Req
         client_socket.send_to(
             &ReqPacketView::create_packet_buffer(
@@ -174,10 +178,89 @@ mod tests {
                 server.local_addr()
             ).unwrap();
         }
+        // validate content
         assert_eq!(std::str::from_utf8(&received_file_content).unwrap(), file_content);
         assert_eq!(sha256_from_bytes(&received_file_content), checksum);
         sleep(Duration::from_millis(100));
         assert_eq!(server.state.connection_pool.len(), 0);
+        // stop server
+        drop(server);
+    }
+
+    #[test]
+    fn migration(){
+        const FILE_NAME: &str = "hello.txt";
+        const FILE_CONTENT: &str = "hello world";
+        const MAX_PACKET_SIZE: MaxPacketSize = 22;
+
+        //let _ = env_logger::builder().filter_level(LevelFilter::Debug).try_init();
+
+        // start server
+        let served_dir = TempDir::new("soft_test").unwrap();
+        let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
+        file.write(FILE_CONTENT.as_bytes()).unwrap();
+        let server = Server::start("127.0.0.1:0", served_dir.into_path());
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        client_socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+        let mut client_receive_buffer = [0u8; SOFT_MAX_PACKET_SIZE];
+        let mut received_file_content = Vec::<u8>::with_capacity(FILE_CONTENT.len());
+
+        // send Req
+        client_socket.send_to(
+            &ReqPacketView::create_packet_buffer(
+                MAX_PACKET_SIZE,
+                "hello.txt"
+            ),
+            server.local_addr()
+        ).unwrap();
+
+        // receive Acc
+        let mut packet = receive(&client_socket, &mut client_receive_buffer);
+        let acc_packet = AccPacketView::from_packet(&mut packet);
+        let connection_id = acc_packet.connection_id();
+        drop(acc_packet);
+
+        // send Ack 0
+        client_socket.send_to(
+            &AckPacketView::create_packet_buffer(
+                10,
+                connection_id,
+                0
+            ),
+            server.local_addr()
+        ).unwrap();
+
+        // receive Data 0
+        let mut packet = receive(&client_socket, &mut client_receive_buffer);
+        let data_packet = DataPacketView::from_packet(&mut packet);
+        received_file_content.write(data_packet.data()).unwrap();
+        drop(data_packet);
+
+        // migrate
+        drop(client_socket);
+        let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        client_socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+
+        // send Ack 1
+        client_socket.send_to(
+            &AckPacketView::create_packet_buffer(
+                10,
+                connection_id,
+                1
+            ),
+            server.local_addr()
+        ).unwrap();
+
+        // receive Data 1
+        let mut packet = receive(&client_socket, &mut client_receive_buffer);
+        let data_packet = DataPacketView::from_packet(&mut packet);
+        received_file_content.write(data_packet.data()).unwrap();
+        drop(data_packet);
+
+        // validate content
+        assert_eq!(std::str::from_utf8(&received_file_content).unwrap(), FILE_CONTENT);
+
         // stop server
         drop(server);
     }
