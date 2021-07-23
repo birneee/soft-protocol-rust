@@ -1,26 +1,23 @@
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, BufRead};
 use std::net::SocketAddr;
-use std::collections::HashMap;
-use soft_shared_lib::{
-    field_types::{SequenceNumber, ReceiveWindow},
-};
+use soft_shared_lib::field_types::{SequenceNumber, ReceiveWindow};
 use std::cmp::min;
 use std::time::{Instant, Duration};
 use crate::congestion_cache::{CongestionCache, CongestionWindow};
 use std::sync::Arc;
 use soft_shared_lib::field_types::{MaxPacketSize, ConnectionId};
 use std::ops::Range;
+use crate::send_buffer::SendBuffer;
 
 pub struct ConnectionState {
     pub connection_id: ConnectionId,
     /// might change on migration
     pub client_addr: SocketAddr,
     pub max_packet_size: MaxPacketSize,
-    //file_name: String,
-    pub data_send_buffer: HashMap<SequenceNumber, Vec<u8>>,
+    /// contains messages that are in flight and not yet acknowledged
+    pub data_send_buffer: SendBuffer,
     pub reader: BufReader<File>,
-    //file_size: FileSize,
     /// None before receiving ACK 0
     pub last_forward_acknowledgement: Option<SequenceNumber>,
     /// None before sending DATA 0
@@ -33,17 +30,13 @@ pub struct ConnectionState {
 impl ConnectionState {
     pub fn new(connection_id: u32, addr: SocketAddr,
                max_packet_size: u16,
-               //file_name: String,
-               //file_size: u64,
                reader: BufReader<File>, congestion_cache: Arc<CongestionCache>) -> Self {
         ConnectionState {
             connection_id,
             client_addr: addr,
             max_packet_size,
-            //file_name,
-            data_send_buffer: HashMap::new(),
+            data_send_buffer: SendBuffer::new(),
             reader,
-            //file_size,
             last_forward_acknowledgement: None,
             last_packet_sent: None,
             client_receive_window: 0,
@@ -106,6 +99,18 @@ impl ConnectionState {
 
     pub fn decrease_congestion_window(&self) {
         self.congestion_cache.decrease(self.client_addr, self.max_packet_size);
+    }
+
+    /// true if all bytes have been read from the file
+    ///
+    /// there might still be packets in the data send buffer
+    pub fn eof(&mut self) -> bool {
+        self.reader.fill_buf().unwrap().len() == 0
+    }
+
+    /// true if all bytes of the file are transferred and acknowledged by the client
+    pub fn transfer_finished(&mut self) -> bool {
+        self.eof() && (self.data_send_buffer.len() == 0)
     }
 
 }
