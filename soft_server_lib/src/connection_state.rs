@@ -86,7 +86,10 @@ impl ConnectionState {
     }
 
     pub fn effective_window(&self) -> u16 {
-        return self.max_window() - (self.last_packet_sent.unwrap_or(0) - self.last_packet_acknowledged().unwrap_or(0)) as u16
+        let last_packet_acknowledged = self.last_packet_acknowledged().map(|s| s as i128).unwrap_or(-1);
+        let last_packet_sent = self.last_packet_sent.map(|s| s as i128).unwrap_or(-1);
+        let max_window = self.max_window() as i128;
+        return (max_window - (last_packet_sent - last_packet_acknowledged)) as u16
     }
 
     pub fn current_rtt(&self) -> Duration {
