@@ -6,7 +6,6 @@ use std::net::{SocketAddr, Ipv4Addr, IpAddr, UdpSocket, ToSocketAddrs};
 use crate::data_send_worker::DataSendWorker;
 use std::path::PathBuf;
 use std::time::Duration;
-use crate::{log_start, log_stop};
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 /// the server will block the thread for this time when
@@ -41,7 +40,11 @@ impl Server {
         let socket = UdpSocket::bind(addr).expect("failed to bind UDP socket");
         socket.set_read_timeout(Some(SOCKET_READ_TIMEOUT)).unwrap();
 
-        log_start!(socket.local_addr().unwrap().port(), served_dir.to_str().unwrap());
+        log::info!(
+            "server start listening on port {}, serving {}",
+            socket.local_addr().unwrap().port(),
+            served_dir.to_str().unwrap()
+        );
 
         let state = Arc::new(ServerState::new(socket, served_dir));
 
@@ -58,7 +61,7 @@ impl Server {
         self.receive_worker.stop();
         self.data_send_worker.stop();
         self.state.state_type.store(ServerStateType::Stopped, Ordering::SeqCst);
-        log_stop!();
+        log::info!("server stopped");
     }
 
     pub fn state(&self) -> ServerStateType {
@@ -81,26 +84,20 @@ mod tests {
     use crate::server::Server;
     use tempdir::TempDir;
     use std::net::UdpSocket;
-    use soft_shared_lib::packet_view::req_packet_view::ReqPacketView;
-    use soft_shared_lib::packet_view::acc_packet_view::AccPacketView;
     use std::time::Duration;
     use std::fs::File;
     use std::io::{Write, ErrorKind};
-    use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
-    use soft_shared_lib::packet_view::ack_packet_view::AckPacketView;
-    use soft_shared_lib::packet_view::data_packet_view::DataPacketView;
-    use soft_shared_lib::packet_view::packet_view::PacketView;
     use std::thread::sleep;
     use soft_shared_lib::field_types::{MaxPacketSize, FileSize};
     use test_case::test_case;
     use soft_shared_lib::helper::sha256_helper::sha256_from_bytes;
-    use soft_shared_lib::constants::SOFT_MAX_PACKET_SIZE;
-    use log::LevelFilter;
-
-    fn receive<'a>(client_socket: &UdpSocket, receive_buffer: &'a mut [u8]) -> PacketView<'a>{
-        let size = client_socket.recv(receive_buffer).unwrap();
-        return PacketView::from_buffer(&mut receive_buffer[..size]).unwrap();
-    }
+    use soft_shared_lib::helper::transfer_helper::receive;
+    use soft_shared_lib::packet::req_packet::ReqPacket;
+    use soft_shared_lib::packet::general_packet::GeneralPacket;
+    use std::convert::TryInto;
+    use soft_shared_lib::general::byte_view::ByteView;
+    use soft_shared_lib::packet::packet_buf::{AccPacketBuf, DataPacketBuf};
+    use soft_shared_lib::packet::ack_packet::AckPacket;
 
     #[test_case("test", 100; "in one data packet")]
     #[test_case("test", 18; "in two data packet")]
@@ -119,18 +116,11 @@ mod tests {
         let server = Server::start("127.0.0.1:0", served_dir.into_path());
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         client_socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
-        let mut receive_buffer = [0u8; SOFT_MAX_PACKET_SIZE];
         // send Req
-        client_socket.send_to(
-            &ReqPacketView::create_packet_buffer(
-                max_packet_size,
-                "hello.txt"
-            ),
-            server.local_addr()
-        ).unwrap();
+        let req_packet = ReqPacket::new_buf(max_packet_size, FILE_NAME);
+        client_socket.send_to(req_packet.buf(), server.local_addr()).unwrap();
         // receive Acc
-        let mut packet = receive(&client_socket, &mut receive_buffer);
-        let acc_packet = AccPacketView::from_packet(&mut packet);
+        let acc_packet: AccPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
         let connection_id = acc_packet.connection_id();
         let file_size = acc_packet.file_size();
         let checksum = acc_packet.checksum();
@@ -142,12 +132,11 @@ mod tests {
         // server should send nothing here
         assert_eq!(client_socket.recv(&mut []).err().map(|e| e.kind()), Some(ErrorKind::WouldBlock));
         // send Ack 0
-        client_socket.send_to(
-            &AckPacketView::create_packet_buffer(
+        client_socket.send_to(&AckPacket::new_buf(
                 10,
                 connection_id,
                 0
-            ),
+            ).buf(),
             server.local_addr()
         ).unwrap();
         let mut received_file_content = Vec::<u8>::with_capacity(file_size as usize);
@@ -155,8 +144,7 @@ mod tests {
         // transfer all data content
         while received_file_content.len() as FileSize != file_size{
             // receive Data
-            let mut packet = receive(&client_socket, &mut receive_buffer);
-            let data_packet = DataPacketView::from_packet(&mut packet);
+            let data_packet: DataPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
             let connection_id = data_packet.connection_id();
             assert_eq!(data_packet.connection_id(), connection_id);
             assert_eq!(data_packet.sequence_number(), expected_sequence_number);
@@ -170,11 +158,11 @@ mod tests {
             expected_sequence_number += 1;
             // send Ack
             client_socket.send_to(
-                &AckPacketView::create_packet_buffer(
+                &AckPacket::new_buf(
                     10,
                     connection_id,
                     expected_sequence_number
-                ),
+                ).buf(),
                 server.local_addr()
             ).unwrap();
         }
@@ -193,7 +181,7 @@ mod tests {
         const FILE_CONTENT: &str = "hello world";
         const MAX_PACKET_SIZE: MaxPacketSize = 22;
 
-        //let _ = env_logger::builder().filter_level(LevelFilter::Debug).try_init();
+        let _ = env_logger::builder().filter_level(log::LevelFilter::Debug).try_init();
 
         // start server
         let served_dir = TempDir::new("soft_test").unwrap();
@@ -203,37 +191,34 @@ mod tests {
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         client_socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
-        let mut client_receive_buffer = [0u8; SOFT_MAX_PACKET_SIZE];
         let mut received_file_content = Vec::<u8>::with_capacity(FILE_CONTENT.len());
 
         // send Req
         client_socket.send_to(
-            &ReqPacketView::create_packet_buffer(
+            &ReqPacket::new_buf(
                 MAX_PACKET_SIZE,
                 "hello.txt"
-            ),
+            ).buf(),
             server.local_addr()
         ).unwrap();
 
         // receive Acc
-        let mut packet = receive(&client_socket, &mut client_receive_buffer);
-        let acc_packet = AccPacketView::from_packet(&mut packet);
+        let acc_packet: AccPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
         let connection_id = acc_packet.connection_id();
         drop(acc_packet);
 
         // send Ack 0
         client_socket.send_to(
-            &AckPacketView::create_packet_buffer(
+            &AckPacket::new_buf(
                 10,
                 connection_id,
                 0
-            ),
+            ).buf(),
             server.local_addr()
         ).unwrap();
 
         // receive Data 0
-        let mut packet = receive(&client_socket, &mut client_receive_buffer);
-        let data_packet = DataPacketView::from_packet(&mut packet);
+        let data_packet : DataPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
         received_file_content.write(data_packet.data()).unwrap();
         drop(data_packet);
 
@@ -244,17 +229,16 @@ mod tests {
 
         // send Ack 1
         client_socket.send_to(
-            &AckPacketView::create_packet_buffer(
+            &AckPacket::new_buf(
                 10,
                 connection_id,
                 1
-            ),
+            ).buf(),
             server.local_addr()
         ).unwrap();
 
         // receive Data 1
-        let mut packet = receive(&client_socket, &mut client_receive_buffer);
-        let data_packet = DataPacketView::from_packet(&mut packet);
+        let data_packet : DataPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
         received_file_content.write(data_packet.data()).unwrap();
         drop(data_packet);
 

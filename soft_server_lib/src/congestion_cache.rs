@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::time::{Instant, Duration};
 use soft_shared_lib::times::{congestion_window_cache_timeout, INITIAL_RTT};
 use std::sync::{Mutex, MutexGuard};
-use crate::log_updated_congestion_window;
+use log::debug;
 
 pub type CongestionWindow = u16; // same size as receive window
 
@@ -94,7 +94,7 @@ impl CongestionCache {
         let mut lock = self.map.lock().expect("failed to lock");
         let value = Self::get(&mut lock, addr, max_packet_size);
         value.congestion_window += 1;
-        log_updated_congestion_window!(addr,value.congestion_window);
+        debug!("updated congestion window of {} to {}", addr, value.congestion_window);
     }
 
     /// halve the congestion window
@@ -102,6 +102,6 @@ impl CongestionCache {
         let mut lock = self.map.lock().expect("failed to lock");
         let value = Self::get(&mut lock, addr, max_packet_size);
         value.congestion_window /= 2;
-        log_updated_congestion_window!(addr,value.congestion_window);
+        debug!("updated congestion window of {} to {}", addr, value.congestion_window);
     }
 }

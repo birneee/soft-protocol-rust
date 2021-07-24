@@ -7,23 +7,21 @@ use std::io::{BufReader, SeekFrom, Seek, ErrorKind};
 use std::os::unix::prelude::MetadataExt;
 use std::sync::Arc;
 use std::net::{SocketAddr};
-use soft_shared_lib::packet_view::packet_view::PacketView;
-use PacketView::{Req, Acc, Data, Ack};
 use std::thread::JoinHandle;
 use std::sync::atomic::AtomicBool;
 use std::thread;
 use soft_shared_lib::field_types::MaxPacketSize;
-use soft_shared_lib::packet_view::acc_packet_view::AccPacketView;
-use soft_shared_lib::packet_view::err_packet_view::ErrPacketView;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use std::cmp::min;
 use soft_shared_lib::soft_error_code::SoftErrorCode::{UnsupportedVersion, FileNotFound, InvalidOffset, Unknown};
-use soft_shared_lib::packet_view::unchecked_packet_view::UncheckedPacketView;
-use soft_shared_lib::packet::packet_type::PacketType;
 use std::time::Instant;
 use soft_shared_lib::helper::range_helper::{compare_range, RangeCompare};
-use crate::{log_packet_sent, log_new_connection, log_packet_received};
 use log::debug;
+use soft_shared_lib::packet::packet::Packet;
+use soft_shared_lib::packet::packet_buf::PacketBuf;
+use soft_shared_lib::packet::err_packet::ErrPacket;
+use soft_shared_lib::packet::packet::Packet::{Req, Acc, Data, Ack};
+use soft_shared_lib::packet::acc_packet::AccPacket;
 
 /// Server worker that handles the server logic
 pub struct ReceiveWorker {
@@ -68,10 +66,10 @@ impl ReceiveWorker {
     }
 
     /// might return some buffer that is sent back to that client
-    pub fn handle_packet(state: &Arc<ServerState>, packet: &Result<PacketView>, src: &SocketAddr) -> Option<Vec<u8>>{
+    pub fn handle_packet(state: &Arc<ServerState>, packet: &Result<Packet>, src: &SocketAddr) -> Option<PacketBuf>{
         match packet {
             Err(UnsupportedSoftVersion(_)) => {
-                return Some(ErrPacketView::create_packet_buffer(UnsupportedVersion, 0));
+                return Some(PacketBuf::from(ErrPacket::new_buf(UnsupportedVersion, 0)));
             }
             Err(e) => {
                 eprintln!("unexpected error {}", e);
@@ -82,13 +80,13 @@ impl ReceiveWorker {
                     Ok(file) => file,
                     Err(error) => {
                         eprintln!("{}", error);
-                        return Some(ErrPacketView::create_packet_buffer(FileNotFound, 0));
+                        return Some(PacketBuf::from(ErrPacket::new_buf(FileNotFound, 0)));
                     }
                 };
                 let metadata = file.metadata().expect("Unable to query file metadata.");
                 let file_size = metadata.size();
                 if p.offset() >= file_size {
-                    return Some(ErrPacketView::create_packet_buffer(InvalidOffset, 0));
+                    return Some(PacketBuf::from(ErrPacket::new_buf(InvalidOffset, 0)));
                 }
                 let mut reader = BufReader::with_capacity(FILE_READER_BUFFER_SIZE, file);
                 let checksum = match state
@@ -98,13 +96,13 @@ impl ReceiveWorker {
                     Ok(checksum) => checksum,
                     Err(error) => {
                         eprintln!("{}", error);
-                        return Some(ErrPacketView::create_packet_buffer(Unknown, 0));
+                        return Some(PacketBuf::from(ErrPacket::new_buf(Unknown, 0)));
                     }
                 };
                 // reset the file pointer to 0
                 if let Err(e) = reader.seek(SeekFrom::Start(0)) {
                     eprintln!("{}", e);
-                    return Some(ErrPacketView::create_packet_buffer(Unknown, 0));
+                    return Some(PacketBuf::from(ErrPacket::new_buf(Unknown, 0)));
                 }
                 let connection_lock = state.connection_pool.add(
                     src.clone(),
@@ -115,8 +113,8 @@ impl ReceiveWorker {
                     state.congestion_cache.clone()
                 );
                 let connection = connection_lock.read().unwrap();
-                log_new_connection!(&connection);
-                return Some(AccPacketView::create_packet_buffer(connection.connection_id, file_size, checksum));
+                debug!("new connection {{ connection_id: {}, src_addr: {} }}", connection.connection_id, connection.client_addr);
+                return Some(PacketBuf::Acc(AccPacket::new_buf(connection.connection_id, file_size, checksum)));
             }
             Ok(Acc(_)) => {
                 eprintln!("ignore ACC packets");
@@ -170,7 +168,7 @@ impl ReceiveWorker {
                 }
                 return None; // ignore because there is no such connection id
             }
-            Ok(PacketView::Err(p)) => {
+            Ok(Packet::Err(p)) => {
                 debug!(
                     "received error {:?} from connection {}",
                     p.error_code(),
@@ -188,22 +186,22 @@ impl ReceiveWorker {
         while running.load(Ordering::SeqCst) {
             match state.socket.recv_from(&mut receive_buffer) {
                 Ok((size, src)) => {
-                    let packet = PacketView::from_buffer(&mut receive_buffer[0..size]);
+                    let packet = Packet::from_buf(&mut receive_buffer[0..size]);
                     if let Ok(packet) = &packet{
-                        log_packet_received!(&packet);
+                        debug!("received {}", packet);
                     }
-                    if let Some(mut buf) = Self::handle_packet(&state, &packet, &src) {
+                    if let Some(mut packet) = Self::handle_packet(&state, &packet, &src) {
                         state
                             .socket
-                            .send_to(&buf, src)
+                            .send_to(packet.buf(), src)
                             .expect(format!("failed to send to {}", src).as_str());
 
-                        log_packet_sent!(&PacketView::from_buffer(&mut buf).unwrap());
+                        debug!("sent {}", packet);
 
                         // drop connection if error
-                        let packet = UncheckedPacketView::from_buffer(&mut buf);
-                        if packet.packet_type() == PacketType::Err && packet.connection_id() != 0 {
+                        if let PacketBuf::Err(packet) = packet {
                             state.connection_pool.drop(packet.connection_id());
+
                         }
                     }
                 }
