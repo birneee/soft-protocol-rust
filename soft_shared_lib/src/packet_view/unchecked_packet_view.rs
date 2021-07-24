@@ -20,6 +20,22 @@ impl<'a> GeneralSoftPacket for UncheckedPacketView<'a> {
     fn packet_type(&self) -> PacketType {
         return PacketType::from_raw(self.buf[1]);
     }
+
+    fn buf(&self) -> &[u8] {
+        self.buf
+    }
+
+    fn mut_buf(&mut self) -> &mut [u8] {
+        self.buf
+    }
+
+    fn connection_id_or_none(&self) -> Option<ConnectionId> {
+        return if self.packet_type() == PacketType::Req {
+            None
+        } else {
+            Some(self.connection_id())
+        }
+    }
 }
 
 #[allow(dead_code)]

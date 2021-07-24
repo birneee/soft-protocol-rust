@@ -121,11 +121,3 @@ pub enum ClientError {
     ProtocolError(SoftErrorCode),
     //TODO add other errors that can happen
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}

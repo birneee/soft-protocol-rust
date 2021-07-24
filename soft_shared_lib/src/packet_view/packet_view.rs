@@ -9,6 +9,8 @@ use crate::constants::SOFT_PROTOCOL_VERSION;
 use crate::error::ErrorType::UnsupportedSoftVersion;
 use crate::error::Result;
 use crate::packet_view::data_packet_view::DataPacketView;
+use std::fmt::{Display, Formatter};
+use crate::field_types::ConnectionId;
 
 /// Union type of all packet views
 pub enum PacketView<'a> {
@@ -54,6 +56,48 @@ impl<'a> GeneralSoftPacket for PacketView<'a> {
             PacketView::Data(p) => p.packet_type(),
             PacketView::Ack(p) => p.packet_type(),
             PacketView::Err(p) => p.packet_type(),
+        }
+    }
+
+    fn buf(&self) -> &[u8] {
+        match self {
+            PacketView::Req(p) => p.buf(),
+            PacketView::Acc(p) => p.buf(),
+            PacketView::Data(p) => p.buf(),
+            PacketView::Ack(p) => p.buf(),
+            PacketView::Err(p) => p.buf(),
+        }
+    }
+
+    fn mut_buf(&mut self) -> &mut [u8] {
+        match self {
+            PacketView::Req(p) => p.mut_buf(),
+            PacketView::Acc(p) => p.mut_buf(),
+            PacketView::Data(p) => p.mut_buf(),
+            PacketView::Ack(p) => p.mut_buf(),
+            PacketView::Err(p) => p.mut_buf(),
+        }
+    }
+
+    fn connection_id_or_none(&self) -> Option<ConnectionId> {
+        match self {
+            PacketView::Req(p) => p.connection_id_or_none(),
+            PacketView::Acc(p) => p.connection_id_or_none(),
+            PacketView::Data(p) => p.connection_id_or_none(),
+            PacketView::Ack(p) => p.connection_id_or_none(),
+            PacketView::Err(p) => p.connection_id_or_none(),
+        }
+    }
+}
+
+impl<'a> Display for PacketView<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PacketView::Req(p) => (*p).fmt(f),
+            PacketView::Acc(p) => (*p).fmt(f),
+            PacketView::Data(p) => (*p).fmt(f),
+            PacketView::Ack(p) => (*p).fmt(f),
+            PacketView::Err(p) => (*p).fmt(f),
         }
     }
 }

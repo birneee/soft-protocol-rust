@@ -4,6 +4,8 @@ use crate::packet_view::unchecked_packet_view::UncheckedPacketView;
 use crate::field_types::{ConnectionId, FileSize, Checksum, Version, PacketTypeRaw, Padding16};
 use std::mem::size_of;
 use crate::constants::SOFT_PROTOCOL_VERSION;
+use std::fmt::{Display, Formatter};
+use crate::helper::sha256_helper::sha256_to_hex_string;
 
 pub struct AccPacketView<'a> {
     inner: UncheckedPacketView<'a>,
@@ -39,6 +41,10 @@ impl<'a> AccPacketView<'a> {
         }
     }
 
+    pub fn from_packet(packet: & mut dyn GeneralSoftPacket) -> AccPacketView {
+        return Self::from_buffer(packet.mut_buf());
+    }
+
     pub fn connection_id(&self) -> ConnectionId {
         self.inner.connection_id()
     }
@@ -59,5 +65,30 @@ impl<'a> GeneralSoftPacket for AccPacketView<'a> {
 
     fn packet_type(&self) -> PacketType {
         self.inner.packet_type()
+    }
+
+    fn buf(&self) -> & [u8]{
+        self.inner.buf()
+    }
+
+    fn mut_buf(&mut self) -> & mut [u8] {
+        self.inner.mut_buf()
+    }
+
+    fn connection_id_or_none(&self) -> Option<ConnectionId> {
+        Some(self.connection_id())
+    }
+}
+
+impl<'a> Display for AccPacketView<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Acc {{ version: {},  connection_id: {}, file_size: {}, checksum: {} }}",
+            self.version(),
+            self.connection_id(),
+            self.file_size(),
+            sha256_to_hex_string(self.checksum())
+        )
     }
 }

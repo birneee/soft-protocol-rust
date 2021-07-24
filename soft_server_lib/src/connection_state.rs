@@ -9,7 +9,7 @@ use std::cmp::min;
 use std::time::{Instant, Duration};
 use crate::congestion_cache::{CongestionCache, CongestionWindow};
 use std::sync::Arc;
-use soft_shared_lib::field_types::{MaxPacketSize, ConnectionId, FileSize};
+use soft_shared_lib::field_types::{MaxPacketSize, ConnectionId};
 use std::ops::Range;
 
 pub struct ConnectionState {
@@ -17,10 +17,10 @@ pub struct ConnectionState {
     /// might change on migration
     pub client_addr: SocketAddr,
     pub max_packet_size: MaxPacketSize,
-    file_name: String,
+    //file_name: String,
     pub data_send_buffer: HashMap<SequenceNumber, Vec<u8>>,
     pub reader: BufReader<File>,
-    file_size: FileSize,
+    //file_size: FileSize,
     /// None before receiving ACK 0
     pub last_forward_acknowledgement: Option<SequenceNumber>,
     /// None before sending DATA 0
@@ -32,19 +32,21 @@ pub struct ConnectionState {
 
 impl ConnectionState {
     pub fn new(connection_id: u32, addr: SocketAddr,
-               max_packet_size: u16, file_name: String,
-               file_size: u64, reader: BufReader<File>, congestion_cache: Arc<CongestionCache>) -> Self {
+               max_packet_size: u16,
+               //file_name: String,
+               //file_size: u64,
+               reader: BufReader<File>, congestion_cache: Arc<CongestionCache>) -> Self {
         ConnectionState {
             connection_id,
             client_addr: addr,
             max_packet_size,
-            file_name,
+            //file_name,
             data_send_buffer: HashMap::new(),
             reader,
-            file_size,
+            //file_size,
             last_forward_acknowledgement: None,
             last_packet_sent: None,
-            client_receive_window: 1,
+            client_receive_window: 0,
             congestion_cache,
             packet_loss_timeout: Instant::now()
         }

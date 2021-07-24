@@ -1,3 +1,11 @@
+pub fn sha256_to_hex_string(sha: [u8; 32]) -> String{
+    let mut str = String::with_capacity(64);
+    for byte in sha {
+        str.push_str(&format!("{:02x}", byte));
+    }
+    return str;
+}
+
 #[cfg(test)]
 mod tests {
     use sha2::{Sha256, Digest};
