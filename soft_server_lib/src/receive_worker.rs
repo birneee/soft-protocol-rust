@@ -148,9 +148,12 @@ impl ReceiveWorker {
                             // normal sequential ack
                             guard.client_receive_window = p.receive_window();
                             guard.last_forward_acknowledgement = Some(next_sequence_number);
-                            //TODO maybe should not increase on Ack 0
-                            guard.increase_congestion_window();
-                            //TODO remove packets from send buffer
+                            guard.data_send_buffer.drop_before(next_sequence_number);
+                            if guard.transfer_finished() {
+                                state.connection_pool.drop(guard.connection_id);
+                            } else if next_sequence_number != 0 {
+                                guard.increase_congestion_window();
+                            }
                             return None;
                         }
                         RangeCompare::HIGHER => {

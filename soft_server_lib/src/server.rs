@@ -92,6 +92,7 @@ mod tests {
     use soft_shared_lib::packet_view::ack_packet_view::AckPacketView;
     use soft_shared_lib::packet_view::data_packet_view::DataPacketView;
     use soft_shared_lib::packet_view::packet_view::PacketView;
+    use std::thread::sleep;
 
     fn receive<'a>(client_socket: &UdpSocket, receive_buffer: &'a mut [u8]) -> PacketView<'a>{
         let size = client_socket.recv(receive_buffer).unwrap();
@@ -100,7 +101,7 @@ mod tests {
 
     #[test]
     /// test server connection acceptance
-    fn handshake() {
+    fn simple_transfer() {
         const FILE_NAME: &str = "hello.txt";
         const FILE_CONTENT: &str = "test";
         const FILE_CHECKSUM: [u8; 32] = hex!("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08");
@@ -132,6 +133,8 @@ mod tests {
         assert_eq!(acc_packet.file_size(), FILE_SIZE);
         assert_eq!(acc_packet.checksum(), FILE_CHECKSUM);
         drop(acc_packet);
+        assert_eq!(server.state.connection_pool.len(), 1);
+        assert_eq!(server.state.connection_pool.get(connection_id).unwrap().read().unwrap().max_window(), 0);
         // server should send nothing here
         assert_eq!(client_socket.recv(&mut []).err().map(|e| e.kind()), Some(ErrorKind::WouldBlock));
         // send Ack 0
@@ -151,6 +154,18 @@ mod tests {
         assert_eq!(data_packet.sequence_number(), 0);
         assert_eq!(data_packet.data().len(), 4);
         assert_eq!(std::str::from_utf8(data_packet.data()).unwrap(), FILE_CONTENT);
+        assert_eq!(server.state.connection_pool.get(connection_id).unwrap().read().unwrap().max_window(), 1);
+        // send Ack 1
+        client_socket.send_to(
+            &AckPacketView::create_packet_buffer(
+                10,
+                connection_id,
+                1
+            ),
+            server.local_addr()
+        ).unwrap();
+        sleep(Duration::from_millis(100));
+        assert_eq!(server.state.connection_pool.len(), 0);
         // stop server
         drop(server);
     }
