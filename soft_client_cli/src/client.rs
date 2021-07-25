@@ -12,7 +12,7 @@ use soft_client_lib::{data_worker::DataWorker, SoftClient};
 
 pub struct Client {
     socket: UdpSocket,
-    data_worker: DataWorker,
+    _data_worker: DataWorker,
     status_reciever: Receiver<f64>,
     file_sender: Sender<SoftClient>,
 }
@@ -38,11 +38,6 @@ impl Client {
             status_reciever,
             file_sender,
         }
-    }
-
-    /// this function is only called by drop
-    fn stop(&mut self) {
-        self.data_worker.stop();
     }
 
     pub fn run_loop(&mut self) {
@@ -102,11 +97,5 @@ impl Client {
                 _ => {}
             }
         }
-    }
-}
-
-impl Drop for Client {
-    fn drop(&mut self) {
-        self.stop();
     }
 }
