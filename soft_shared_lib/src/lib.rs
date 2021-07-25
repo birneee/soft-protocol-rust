@@ -6,6 +6,7 @@ pub mod packet_view;
 pub mod field_types;
 pub mod times;
 pub mod helper;
+pub mod ttl_map;
 
 #[macro_use]
 extern crate num_derive;
