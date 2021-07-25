@@ -1,72 +1,60 @@
-use std::io::{BufWriter, ErrorKind, Write};
-use std::net::{SocketAddr, UdpSocket};
-use std::fs::File;
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
+pub mod data_worker;
+
 use soft_shared_lib::field_types::{Checksum, ConnectionId};
 use soft_shared_lib::packet_view::ack_packet_view::AckPacketView;
 use soft_shared_lib::packet_view::packet_view::PacketView;
 use soft_shared_lib::packet_view::req_packet_view::ReqPacketView;
 use soft_shared_lib::soft_error_code::SoftErrorCode;
-use PacketView::{Req, Acc, Data, Ack};
+use std::fs::File;
+use std::io::{BufWriter};
+use std::net::{UdpSocket};
+use PacketView::{Acc};
 
 pub enum SoftClientState {
     Initialized,
+    Handshaken,
     Downloading,
     Error(ClientError),
     Stopped,
-    Done
+    Done,
 }
 
 const MAX_PACKET_SIZE: usize = 2usize.pow(16) - 8 - 20;
 
 pub struct SoftClient {
-    file_name: String,
     file_writer: BufWriter<File>,
-    // TODO: The socket needs to remain the same over different file.
     socket: UdpSocket,
-    addr: SocketAddr,
-    download_channel: Sender<f32>,
-    reciever_channel: Receiver<f32>,
     connection_id: Option<ConnectionId>,
     checksum: Option<Checksum>,
     file_size: Option<u64>,
+    percentage: f64,
     state: SoftClientState,
 }
 
 impl SoftClient {
-
-    pub fn new(addr: SocketAddr, file_name: String, output_file_name: &str) -> Self {
-        // this can be moved out to reuse across parallel / sequencial file downloads.
-        let socket = UdpSocket::bind("127.0.0.1:0").expect("failed to bind UDP socket");
-        socket.connect(addr).expect(format!("Unable to connect to target, {}", addr).as_str());
+    pub fn new(socket: UdpSocket, output_file: File) -> Self {
         // TODO: configure socket.
-        let (download_channel, reciever_channel): (Sender<f32>, Receiver<f32>) = mpsc::channel();
-        let output_file = File::create(output_file_name)
-                                    .expect(format!("Unable to create file {}", output_file_name)
-                                    .as_str());
         let file_writer = BufWriter::new(output_file);
         let state = SoftClientState::Initialized;
         SoftClient {
-            file_name,
             file_writer,
             socket,
-            addr,
-            download_channel,
-            reciever_channel,
             connection_id: None,
             checksum: None,
             file_size: None,
-            state
+            percentage: 0.0,
+            state,
         }
     }
 
-    fn handshake(&mut self) {
+    pub fn init(&mut self, file_name: String) {
         let mut receive_buffer = [0u8; MAX_PACKET_SIZE];
 
-        let request = ReqPacketView::create_packet_buffer(MAX_PACKET_SIZE as u16,
-                                                        self.file_name.as_str());
-        self.socket.send_to(&request, self.addr).expect(format!("failed to send to {}", self.addr).as_str());
+        let request =
+            ReqPacketView::create_packet_buffer(MAX_PACKET_SIZE as u16, file_name.as_str());
+        self.socket
+            .send(&request)
+            .expect("failed to send Request packet");
         match self.socket.recv(&mut receive_buffer) {
             Ok(size) => {
                 let packet = PacketView::from_buffer(&mut receive_buffer[0..size]);
@@ -75,9 +63,9 @@ impl SoftClient {
                         self.connection_id = Some(acc.connection_id());
                         self.checksum = Some(acc.checksum());
                         self.file_size = Some(acc.file_size());
-                    },
+                    }
                     // We are not interested in the other packet types now.
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(_) => todo!(),
                 }
             }
@@ -88,24 +76,21 @@ impl SoftClient {
         }
         // Build a Ack to finish the handshake.
         let ack = AckPacketView::create_packet_buffer(10, self.connection_id.unwrap(), 0);
-        self.socket.send(ack.as_slice()).expect("Unable to send ack");
+        self.socket
+            .send(ack.as_slice())
+            .expect("Unable to send ack");
         println!("Finished handshake");
+
+        self.state = SoftClientState::Handshaken;
     }
 
-    /// starts a new SOFT client download in a new thread
-    pub fn init_download(&mut self) {
-        self.handshake();
-
-
+    pub fn increase_percentage(&mut self) {
+        self.percentage += 20.0;
     }
 
-    fn download(&mut self) {
-        thread::spawn(move || {
-           loop {          
-            }
-        });
+    pub fn get_file_download_status(&self) -> f64 {
+        self.percentage
     }
-
     pub fn progress(&self) -> f32 {
         todo!()
     }
