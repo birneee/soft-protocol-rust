@@ -22,7 +22,7 @@ impl Client {
     // We register a UDP socket for the SOFT protocol to use.
     // Should be cloned for subsequent file downloads
     pub fn new(server_addr: SocketAddr) -> Client {
-        let socket = UdpSocket::bind("127.0.0.1:0").expect("failed to bind UDP socket");
+        let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
         socket
             .connect(server_addr)
             .expect(format!("Unable to connect to target, {}", server_addr).as_str());
