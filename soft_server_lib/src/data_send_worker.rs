@@ -11,6 +11,7 @@ use std::io::{Read, Write};
 use crate::data_send_worker::ReadResult::Eof;
 use soft_shared_lib::packet_view::packet_view::PacketView;
 use crate::log_packet_sent;
+use std::time::Duration;
 
 
 /// Server worker that handles outgoing messages
@@ -48,7 +49,10 @@ impl DataSendWorker {
         while running.load(Ordering::SeqCst) {
             //TODO stop or delay if no connection is open
             match state.connection_pool.get_any_with_effective_window() {
-                None => {}
+                None => {
+                    //TODO find better method
+                    thread::sleep(Duration::from_secs(1));
+                }
                 Some(connection_state) => {
                     let mut guard = connection_state.write().expect("failed to lock");
                     //TODO make implementation more efficient
