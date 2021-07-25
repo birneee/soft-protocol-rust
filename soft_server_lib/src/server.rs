@@ -86,32 +86,32 @@ mod tests {
     use std::time::Duration;
     use std::fs::File;
     use std::io::{Write, ErrorKind};
-    use hex_literal::hex;
     use soft_shared_lib::packet::general_soft_packet::GeneralSoftPacket;
-    use log::LevelFilter;
     use soft_shared_lib::packet_view::ack_packet_view::AckPacketView;
     use soft_shared_lib::packet_view::data_packet_view::DataPacketView;
     use soft_shared_lib::packet_view::packet_view::PacketView;
+    use std::thread::sleep;
+    use soft_shared_lib::field_types::{MaxPacketSize, FileSize};
+    use test_case::test_case;
+    use soft_shared_lib::helper::sha256_helper::sha256_from_bytes;
 
     fn receive<'a>(client_socket: &UdpSocket, receive_buffer: &'a mut [u8]) -> PacketView<'a>{
         let size = client_socket.recv(receive_buffer).unwrap();
         return PacketView::from_buffer(&mut receive_buffer[..size]).unwrap();
     }
 
-    #[test]
-    /// test server connection acceptance
-    fn handshake() {
+    #[test_case("test", 100; "in one data packet")]
+    #[test_case("test", 18; "in two data packet")]
+    #[test_case("test", 17; "in four data packet")]
+    /// test simple transfers
+    fn simple_transfer(file_content: &str, max_packet_size: MaxPacketSize) {
         const FILE_NAME: &str = "hello.txt";
-        const FILE_CONTENT: &str = "test";
-        const FILE_CHECKSUM: [u8; 32] = hex!("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08");
         const FILE_SIZE: u64 = 4;
         const SOFT_VERSION: u8 = 1;
 
-        env_logger::builder().filter_level(LevelFilter::Debug).init();
-
         let served_dir = TempDir::new("soft_test").unwrap();
         let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
-        file.write(FILE_CONTENT.as_bytes()).unwrap();
+        file.write(file_content.as_bytes()).unwrap();
         let server = Server::start("127.0.0.1:0", served_dir.into_path());
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         client_socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
@@ -119,7 +119,7 @@ mod tests {
         // send Req
         client_socket.send_to(
             &ReqPacketView::create_packet_buffer(
-                100,
+                max_packet_size,
                 "hello.txt"
             ),
             server.local_addr()
@@ -128,10 +128,13 @@ mod tests {
         let mut packet = receive(&client_socket, &mut receive_buffer);
         let acc_packet = AccPacketView::from_packet(&mut packet);
         let connection_id = acc_packet.connection_id();
+        let file_size = acc_packet.file_size();
+        let checksum = acc_packet.checksum();
         assert_eq!(acc_packet.version(), SOFT_VERSION);
-        assert_eq!(acc_packet.file_size(), FILE_SIZE);
-        assert_eq!(acc_packet.checksum(), FILE_CHECKSUM);
+        assert_eq!(file_size, FILE_SIZE);
         drop(acc_packet);
+        assert_eq!(server.state.connection_pool.len(), 1);
+        assert_eq!(server.state.connection_pool.get(connection_id).unwrap().read().unwrap().max_window(), 0);
         // server should send nothing here
         assert_eq!(client_socket.recv(&mut []).err().map(|e| e.kind()), Some(ErrorKind::WouldBlock));
         // send Ack 0
@@ -143,14 +146,38 @@ mod tests {
             ),
             server.local_addr()
         ).unwrap();
-        // receive Data
-        let mut packet = receive(&client_socket, &mut receive_buffer);
-        let data_packet = DataPacketView::from_packet(&mut packet);
-        let connection_id = data_packet.connection_id();
-        assert_eq!(data_packet.connection_id(), connection_id);
-        assert_eq!(data_packet.sequence_number(), 0);
-        assert_eq!(data_packet.data().len(), 4);
-        assert_eq!(std::str::from_utf8(data_packet.data()).unwrap(), FILE_CONTENT);
+        let mut received_file_content = Vec::<u8>::with_capacity(file_size as usize);
+        let mut expected_sequence_number = 0;
+        // transfer all data content
+        while received_file_content.len() as FileSize != file_size{
+            // receive Data
+            let mut packet = receive(&client_socket, &mut receive_buffer);
+            let data_packet = DataPacketView::from_packet(&mut packet);
+            let connection_id = data_packet.connection_id();
+            assert_eq!(data_packet.connection_id(), connection_id);
+            assert_eq!(data_packet.sequence_number(), expected_sequence_number);
+            assert!(data_packet.packet_size() <= max_packet_size);
+            if data_packet.sequence_number() == 0 {
+                assert_eq!(server.state.connection_pool.get(connection_id).unwrap().read().unwrap().max_window(), 1);
+            } else {
+                assert!(server.state.connection_pool.get(connection_id).unwrap().read().unwrap().max_window() > 1);
+            }
+            received_file_content.write(data_packet.data()).unwrap();
+            expected_sequence_number += 1;
+            // send Ack
+            client_socket.send_to(
+                &AckPacketView::create_packet_buffer(
+                    10,
+                    connection_id,
+                    expected_sequence_number
+                ),
+                server.local_addr()
+            ).unwrap();
+        }
+        assert_eq!(std::str::from_utf8(&received_file_content).unwrap(), file_content);
+        assert_eq!(sha256_from_bytes(&received_file_content), checksum);
+        sleep(Duration::from_millis(100));
+        assert_eq!(server.state.connection_pool.len(), 0);
         // stop server
         drop(server);
     }

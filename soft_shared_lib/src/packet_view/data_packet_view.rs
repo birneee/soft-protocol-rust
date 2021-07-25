@@ -61,6 +61,10 @@ impl<'a> DataPacketView<'a> {
     pub fn data(&self) -> &[u8] {
         self.inner.data()
     }
+
+    pub fn packet_size(&self) -> u16 {
+        self.buf().len() as u16
+    }
 }
 
 impl<'a> GeneralSoftPacket for DataPacketView<'a> {

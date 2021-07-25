@@ -7,7 +7,7 @@ use std::thread;
 use crate::connection_state::ConnectionState;
 use soft_shared_lib::field_types::SequenceNumber;
 use soft_shared_lib::packet_view::data_packet_view::DataPacketView;
-use std::io::{Read};
+use std::io::{Read, Write};
 use crate::data_send_worker::ReadResult::Eof;
 use soft_shared_lib::packet_view::packet_view::PacketView;
 use crate::log_packet_sent;
@@ -54,8 +54,9 @@ impl DataSendWorker {
                     //TODO make implementation more efficient
                     while guard.effective_window() > 0 {
                         let sequence_number = guard.last_packet_sent.map(|n| n+1).unwrap_or(0);
-                        if let Some(buf) = guard.data_send_buffer.get(&sequence_number) {
-                            state.socket.send_to(&buf, guard.client_addr).expect("failed to send packet");
+                        let client_addr = guard.client_addr;
+                        if let Some(buf) = guard.data_send_buffer.get(sequence_number) {
+                            state.socket.send_to(&buf, client_addr).expect("failed to send packet");
                             guard.last_packet_sent = Some(sequence_number);
                         } else {
                             match Self::read_next_data_packet(sequence_number, &mut guard) {
@@ -65,12 +66,15 @@ impl DataSendWorker {
                                 }
                                 ReadResult::Err => {
                                     //TODO handle error
+                                    log::error!("file read error");
                                     break
                                 }
                                 ReadResult::Ok(mut buf) => {
                                     state.socket.send_to(&buf, guard.client_addr).expect("failed to send packet");
                                     log_packet_sent!(&PacketView::from_buffer(&mut buf).unwrap());
-                                    guard.data_send_buffer.insert(sequence_number, buf);
+                                    //TODO circumvent copy
+                                    let send_buf = guard.data_send_buffer.add();
+                                    send_buf.write(&buf).unwrap();
                                     guard.last_packet_sent = Some(sequence_number);
                                 }
                             }
