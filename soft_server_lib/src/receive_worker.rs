@@ -1,5 +1,5 @@
 use atomic::{Ordering};
-use soft_shared_lib::error::Result;
+use soft_shared_lib::error::{Result, ErrorType};
 use crate::config::{FILE_READER_BUFFER_SIZE, SERVER_MAX_PACKET_SIZE};
 use crate::server_state::{ServerState};
 use std::fs::File;
@@ -61,8 +61,16 @@ impl ReceiveWorker {
 
     /// only server files from the public directory
     fn get_file(server_state: &ServerState, file_name: String) -> Result<File> {
+        if file_name.starts_with("/") {
+            return Err(ErrorType::FileNotFound);
+        }
+        if file_name.contains("..") {
+            return Err(ErrorType::FileNotFound);
+        }
         let path = server_state.served_dir.join(file_name);
-        assert!(path.starts_with(&server_state.served_dir));
+        if !path.starts_with(&server_state.served_dir){
+            return Err(ErrorType::FileNotFound);
+        }
         return Ok(File::open(path)?);
     }
 
