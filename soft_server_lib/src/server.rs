@@ -181,7 +181,7 @@ mod tests {
         const FILE_CONTENT: &str = "hello world";
         const MAX_PACKET_SIZE: MaxPacketSize = 22;
 
-        let _ = env_logger::builder().filter_level(log::LevelFilter::Debug).try_init();
+        //let _ = env_logger::builder().filter_level(log::LevelFilter::Debug).try_init();
 
         // start server
         let served_dir = TempDir::new("soft_test").unwrap();
