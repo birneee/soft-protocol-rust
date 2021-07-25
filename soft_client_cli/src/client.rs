@@ -31,10 +31,10 @@ impl Client {
         let (file_sender, file_reciever): (Sender<SoftClient>, Receiver<SoftClient>) =
             mpsc::channel();
 
-        let data_worker = DataWorker::start(status_sender, file_reciever);
+        let _data_worker = DataWorker::start(status_sender, file_reciever);
         Client {
             socket,
-            data_worker,
+            _data_worker,
             status_reciever,
             file_sender,
         }
