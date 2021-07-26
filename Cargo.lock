@@ -340,7 +340,9 @@ name = "soft_server_lib"
 version = "0.1.0"
 dependencies = [
  "atomic",
+ "hex-literal",
  "rand",
+ "sha2",
  "soft_shared_lib",
 ]
 
