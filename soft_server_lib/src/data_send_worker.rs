@@ -6,11 +6,11 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 use crate::connection_state::ConnectionState;
 use soft_shared_lib::field_types::SequenceNumber;
-use soft_shared_lib::packet_view::data_packet_view::DataPacketView;
 use std::io::{Read, Write};
 use crate::data_send_worker::ReadResult::Eof;
-use soft_shared_lib::packet_view::packet_view::PacketView;
-use crate::log_packet_sent;
+use soft_shared_lib::packet::data_packet::DataPacket;
+use log::debug;
+use soft_shared_lib::packet::packet::Packet;
 use std::time::Duration;
 
 
@@ -75,7 +75,7 @@ impl DataSendWorker {
                                 }
                                 ReadResult::Ok(mut buf) => {
                                     state.socket.send_to(&buf, guard.client_addr).expect("failed to send packet");
-                                    log_packet_sent!(&PacketView::from_buffer(&mut buf).unwrap());
+                                    debug!("sent {}", Packet::from_buf(&mut buf).unwrap());
                                     //TODO circumvent copy
                                     let send_buf = guard.data_send_buffer.add();
                                     send_buf.write(&buf).unwrap();
@@ -91,14 +91,14 @@ impl DataSendWorker {
 
     /// None if file is read to end
     fn read_next_data_packet(sequence_number: SequenceNumber, connection_state: &mut ConnectionState) -> ReadResult {
-        let max_data_size = connection_state.max_packet_size - (DataPacketView::get_required_buffer_size_without_data() as u16);
+        let max_data_size = connection_state.max_packet_size - (DataPacket::get_required_buffer_size_without_data() as u16);
         let mut tmp_buf = vec![0u8; max_data_size as usize];
         return match connection_state.reader.read(&mut tmp_buf) {
             Ok(size) if size == 0 => {
                 ReadResult::Eof
             }
             Ok(size) => {
-                ReadResult::Ok(DataPacketView::create_packet_buffer(connection_state.connection_id, sequence_number, &tmp_buf[..size]))
+                ReadResult::Ok(DataPacket::new_buf(connection_state.connection_id, sequence_number, &tmp_buf[..size]))
             }
             Err(_) => {
                 ReadResult::Err

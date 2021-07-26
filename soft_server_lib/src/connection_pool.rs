@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use rand::Rng;
 use soft_shared_lib::field_types::{ConnectionId, MaxPacketSize};
 use crate::congestion_cache::CongestionCache;
-use crate::log_closed_connection;
+use log::debug;
 
 pub struct ConnectionPool {
     map: RwLock<HashMap<u32, Arc<RwLock<ConnectionState>>>>
@@ -49,7 +49,7 @@ impl ConnectionPool {
     pub fn drop(&self, connection_id: ConnectionId) {
         let mut guard = self.map.write().expect("failed to lock");
         (*guard).remove(&connection_id);
-        log_closed_connection!(connection_id);
+        debug!("closed connection {}", connection_id);
     }
 
     fn generate_connection_id<T>(map: &HashMap<ConnectionId, T>) -> ConnectionId{
