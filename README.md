@@ -1,6 +1,9 @@
-# The SOFT Protocol 
+# The SOFT Protocol
 
 TODO
+
+## Requirements
+- Rust version 1.53.0 or higher
 
 ## Build Server and Client
 ```

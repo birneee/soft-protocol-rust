@@ -6,6 +6,8 @@ use crate::connection_state::ConnectionState;
 use std::collections::HashMap;
 use rand::Rng;
 use soft_shared_lib::field_types::{ConnectionId, MaxPacketSize};
+use crate::congestion_cache::CongestionCache;
+use log::debug;
 
 pub struct ConnectionPool {
     map: RwLock<HashMap<u32, Arc<RwLock<ConnectionState>>>>
@@ -22,11 +24,11 @@ impl ConnectionPool {
     pub fn get_any_with_effective_window(&self) -> Option<Arc<RwLock<ConnectionState>>> {
         let guard = self.map.read().expect("failed to lock");
         for (_, state) in &*guard {
-            let guard = state.read().expect("failed to lock");
-            if (*guard).effective_window() > 0 {
-                return Some(state.clone());
+            if let Ok(guard) = state.try_read() {
+                if guard.effective_window() > 0 {
+                    return Some(state.clone());
+                }
             }
-
         }
         return None;
     }
@@ -36,17 +38,18 @@ impl ConnectionPool {
         (*guard).get(&connection_id).map(|arc| { arc.clone() })
     }
 
-    pub fn add(&self, src: SocketAddr, max_packet_size: MaxPacketSize, file_name: String, file_size: u64, reader: BufReader<File>) -> ConnectionId {
+    pub fn add(&self, src: SocketAddr, max_packet_size: MaxPacketSize, reader: BufReader<File>, congestion_cache: Arc<CongestionCache>) -> Arc<RwLock<ConnectionState>> {
         let mut guard = self.map.write().expect("failed to lock");
         let connection_id = Self::generate_connection_id(&*guard);
-        let state = ConnectionState::new(connection_id, src, max_packet_size, file_name, file_size, reader);
-        (*guard).insert(connection_id, Arc::new(RwLock::new(state)));
-        return connection_id;
+        let state = Arc::new(RwLock::new(ConnectionState::new(connection_id, src, max_packet_size, reader, congestion_cache)));
+        (*guard).insert(connection_id, state.clone());
+        return state;
     }
 
     pub fn drop(&self, connection_id: ConnectionId) {
         let mut guard = self.map.write().expect("failed to lock");
         (*guard).remove(&connection_id);
+        debug!("closed connection {}", connection_id);
     }
 
     fn generate_connection_id<T>(map: &HashMap<ConnectionId, T>) -> ConnectionId{
@@ -57,5 +60,10 @@ impl ConnectionPool {
                 return connection_id;
             }
         }
+    }
+
+    /// current number of connections
+    pub fn len(&self) -> usize {
+        self.map.read().unwrap().len()
     }
 }

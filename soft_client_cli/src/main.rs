@@ -11,39 +11,45 @@ fn main() {
     let matches = App::new("SOFT Protocol Client CLI")
         .version("1.0")
         .about("The CLI for a SOFT Client")
-        .arg(Arg::with_name("target")
-            .short("t")
-            .long("target")
-            .value_name("IP")
-            .help("Sets the target IP4 address")
-            .required(true)
-        )
-        .arg(Arg::with_name("filename")
-            .short("f")
-            .long("filename")
-            .value_name("FILENAME")
-            .help("The file to be retrieved")
+        .arg(Arg::with_name("host")
+            .short("h")
+            .long("host")
+            .value_name("Host IP")
+            .help("The host to request from")
             .required(true)
         )
         .arg(Arg::with_name("port")
-            .short("p")
-            .long("port")
+            .short("t")
             .value_name("PORT")
             .help("The port to be used")
-            .default_value("TBD")) //TODO: Determine default port
+            .default_value("9840")
+        )
+        .arg(Arg::with_name("markovp")
+            .short("p")
+            .value_name("Markov P")
+            .help("The p probability for the Markov Chain")
+            .default_value("0")
+        )
+        .arg(Arg::with_name("markovq")
+            .short("q")
+            .value_name("Markov Q")
+            .help("The q probability for the Markov Chain")
+            .default_value("0")
+        )
+        .arg(Arg::with_name("file")
+            .short("f")
+            .long("file")
+            .value_name("FILE")
+            .help("The file to request")
+            .required(true)
+        )
         .get_matches();
-    
-    let mut target:IpAddr = matches.value_of("target").expect("target not specified")
-        .parse().expect("invalid IP");
-    let port = matches
-        .value_of("port").expect("port not specified")
-        .parse().expect("invalid port");
-    let mut filename = matches
-        .value_of("filename").expect("file not specified")
-        .parse().expect("invalid filename");
 
-    println!("Trying Connection: {} on Port {}: {}", target, port, filename);
+    let host = matches.value_of("host").unwrap();
+    let port = matches.value_of("port").unwrap();
+    let file = matches.value_of("file").unwrap();
 
+    println!("Connection: {} on Port {}: {}", host, port, file);
     let client = Arc::new(Client::init(port, target, filename));
 
     let client_subthread = Arc::clone(&client);
