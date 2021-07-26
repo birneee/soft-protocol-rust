@@ -27,7 +27,7 @@ fn main() {
             .short("q")
             .value_name("Markov Q")
             .help("The q probability for the Markov Chain")
-            .default_value("TBD")
+            .default_value("0")
         )
         .arg(Arg::with_name("file")
             .short("f")
