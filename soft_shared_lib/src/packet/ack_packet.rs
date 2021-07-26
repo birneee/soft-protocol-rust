@@ -1,16 +1,21 @@
-use crate::packet_view::unchecked_packet_view::UncheckedPacketView;
-use crate::packet::general_soft_packet::GeneralSoftPacket;
 use crate::field_types::{Version, PacketTypeRaw, ReceiveWindow, ConnectionId, NextSequenceNumber};
 use crate::packet::packet_type::PacketType;
 use std::mem::size_of;
 use crate::constants::SOFT_PROTOCOL_VERSION;
 use std::fmt::{Display, Formatter};
+use crate::packet::general_packet::GeneralPacket;
+use crate::packet::unchecked_packet::UncheckedPacket;
+use crate::general::byte_view::ByteView;
+use crate::error::Result;
+use std::convert::TryInto;
+use crate::packet::packet_buf::AckPacketBuf;
 
-pub struct AckPacketView<'a> {
-    inner: UncheckedPacketView<'a>,
+#[repr(transparent)]
+pub struct AckPacket {
+    inner: UncheckedPacket
 }
 
-impl<'a> AckPacketView<'a> {
+impl AckPacket {
 
     fn get_required_buffer_size() -> usize {
         return size_of::<Version>() +
@@ -20,27 +25,15 @@ impl<'a> AckPacketView<'a> {
             size_of::<NextSequenceNumber>()
     }
 
-    pub fn create_packet_buffer(receive_window: ReceiveWindow, connection_id: ConnectionId, next_sequence_number: NextSequenceNumber) -> Vec<u8> {
+    pub fn new_buf(receive_window: ReceiveWindow, connection_id: ConnectionId, next_sequence_number: NextSequenceNumber) -> AckPacketBuf {
         let mut buf = vec![0u8; Self::get_required_buffer_size()];
-        let mut view = UncheckedPacketView::from_buffer(buf.as_mut_slice());
-        view.set_version(SOFT_PROTOCOL_VERSION);
-        view.set_packet_type(PacketType::Ack);
-        view.set_receive_window(receive_window);
-        view.set_connection_id(connection_id);
-        view.set_next_sequence_number(next_sequence_number);
-        return buf;
-    }
-
-    pub fn from_buffer(buf: &mut [u8]) -> AckPacketView {
-        let inner = UncheckedPacketView::from_buffer(buf);
-        assert_eq!(inner.packet_type(), PacketType::Ack);
-        AckPacketView {
-            inner,
-        }
-    }
-
-    pub fn from_packet(packet: & mut dyn GeneralSoftPacket) -> AckPacketView {
-        return Self::from_buffer(packet.mut_buf());
+        let unchecked = UncheckedPacket::from_buf_mut(buf.as_mut_slice());
+        unchecked.set_version(SOFT_PROTOCOL_VERSION);
+        unchecked.set_packet_type(PacketType::Ack);
+        unchecked.set_receive_window(receive_window);
+        unchecked.set_connection_id(connection_id);
+        unchecked.set_next_sequence_number(next_sequence_number);
+        buf.try_into().unwrap()
     }
 
     pub fn connection_id(&self) -> ConnectionId {
@@ -68,21 +61,14 @@ impl<'a> AckPacketView<'a> {
     }
 }
 
-impl<'a> GeneralSoftPacket for AckPacketView<'a> {
+impl GeneralPacket for AckPacket {
+
     fn version(&self) -> Version {
         self.inner.version()
     }
 
-    fn packet_type(&self) -> PacketType {
-        self.inner.packet_type()
-    }
-
-    fn buf(&self) -> &[u8] {
-        self.inner.buf()
-    }
-
-    fn mut_buf(&mut self) -> &mut [u8] {
-        self.inner.mut_buf()
+    fn packet_type() -> PacketType {
+        PacketType::Ack
     }
 
     fn connection_id_or_none(&self) -> Option<ConnectionId> {
@@ -90,7 +76,27 @@ impl<'a> GeneralSoftPacket for AckPacketView<'a> {
     }
 }
 
-impl<'a> Display for AckPacketView<'a> {
+impl ByteView for AckPacket {
+    fn try_from_buf(buf: &[u8]) -> Result<&Self> {
+        Self::validate_type(buf)?;
+        Ok(unsafe { std::mem::transmute(UncheckedPacket::from_buf(buf)) })
+    }
+
+    fn try_from_buf_mut(buf: &mut [u8]) -> Result<&mut Self> {
+        Self::validate_type(buf)?;
+        Ok(unsafe { std::mem::transmute(UncheckedPacket::from_buf_mut(buf)) })
+    }
+
+    fn buf(&self) -> &[u8] {
+        self.inner.buf()
+    }
+
+    fn buf_mut(&mut self) -> &mut [u8] {
+        self.inner.buf_mut()
+    }
+}
+
+impl Display for AckPacket {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

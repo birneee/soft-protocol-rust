@@ -14,6 +14,7 @@ pub enum ErrorType {
     CouldNotReadHeader(String),
     UnsupportedSoftVersion(Version),
     FileNotFound,
+    WrongPacketType,
 }
 
 impl Display for ErrorType {
@@ -38,6 +39,10 @@ impl Display for ErrorType {
                 fmt,
                 "File not found",
             ),
+            ErrorType::WrongPacketType => write!(
+                fmt,
+                "the provided packet has the wrong type"
+            )
         }
     }
 }
