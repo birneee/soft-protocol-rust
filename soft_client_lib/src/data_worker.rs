@@ -17,11 +17,11 @@ pub struct DataWorker {
 
 impl DataWorker {
     /// start worker thread
-    pub fn start(status_sender: Sender<f64>, file_reciever: Receiver<SoftClient>) -> DataWorker {
+    pub fn start(status_sender: Sender<f64>, file_receiver: Receiver<SoftClient>) -> DataWorker {
         let join_handle = {
             thread::spawn(move || {
                 loop {
-                    if let Ok(status) = file_reciever.recv() {
+                    if let Ok(status) = file_receiver.recv() {
                         Self::work(status, status_sender.clone());
                     } else {
                         // The sending half of the channel has been closed, terminate worker
@@ -45,7 +45,7 @@ impl DataWorker {
             .expect("failed to join thread");
     }
 
-    /// loop that is sequentially recieving data from the socket.
+    /// loop that is sequentially receiving data from the socket.
     pub fn work(mut state: SoftClient, status_sender: Sender<f64>) {
         println!("Starting thread and sending data");
         //let mut receive_buffer = [0u8; MAX_PACKET_SIZE];

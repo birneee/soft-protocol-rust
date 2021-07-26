@@ -48,13 +48,17 @@ impl SoftClient {
     }
 
     pub fn init(&mut self, file_name: String) {
+        println!("Initializing handshake for {}", file_name);
+
         let mut receive_buffer = [0u8; MAX_PACKET_SIZE];
 
         let request =
             ReqPacketView::create_packet_buffer(MAX_PACKET_SIZE as u16, file_name.as_str());
+
         self.socket
             .send(&request)
             .expect("failed to send Request packet");
+
         match self.socket.recv(&mut receive_buffer) {
             Ok(size) => {
                 let packet = PacketView::from_buffer(&mut receive_buffer[0..size]);
@@ -63,6 +67,8 @@ impl SoftClient {
                         self.connection_id = Some(acc.connection_id());
                         self.checksum = Some(acc.checksum());
                         self.file_size = Some(acc.file_size());
+                        println!("ACC Packet received");
+                        println!("Connection ID: {}", acc.connection_id());
                     }
                     // We are not interested in the other packet types now.
                     Ok(_) => {}
@@ -74,6 +80,7 @@ impl SoftClient {
                 panic!("failed to receive");
             }
         }
+
         // Build a Ack to finish the handshake.
         let ack = AckPacketView::create_packet_buffer(10, self.connection_id.unwrap(), 0);
         self.socket
@@ -90,9 +97,6 @@ impl SoftClient {
 
     pub fn get_file_download_status(&self) -> f64 {
         self.percentage
-    }
-    pub fn progress(&self) -> f32 {
-        todo!()
     }
     pub fn error(&self) -> Option<ClientError> {
         todo!()
