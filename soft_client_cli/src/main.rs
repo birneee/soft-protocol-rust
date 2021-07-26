@@ -21,7 +21,7 @@ fn main() {
             .short("p")
             .value_name("Markov P")
             .help("The p probability for the Markov Chain")
-            .default_value("TBD")
+            .default_value("0")
         )
         .arg(Arg::with_name("markovq")
             .short("q")
