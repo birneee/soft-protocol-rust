@@ -13,6 +13,7 @@ pub enum ErrorType {
     IOError(io::Error),
     CouldNotReadHeader(String),
     UnsupportedSoftVersion(Version),
+    FileNotFound,
     WrongPacketType,
 }
 
@@ -34,7 +35,14 @@ impl Display for ErrorType {
                 "Version {} of the SOFT protocol is not supported by this implementation",
                 version
             ),
-            ErrorType::WrongPacketType => write!(fmt, "the provided packet has the wrong type")
+            ErrorType::FileNotFound => write!(
+                fmt,
+                "File not found",
+            ),
+            ErrorType::WrongPacketType => write!(
+                fmt,
+                "the provided packet has the wrong type"
+            )
         }
     }
 }
