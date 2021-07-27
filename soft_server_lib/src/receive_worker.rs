@@ -22,11 +22,11 @@ use soft_shared_lib::packet::packet_buf::PacketBuf;
 use soft_shared_lib::packet::err_packet::ErrPacket;
 use soft_shared_lib::packet::packet::Packet::{Req, Acc, Data, Ack};
 use soft_shared_lib::packet::acc_packet::AccPacket;
+use stoppable_thread::{StoppableHandle, SimpleAtomicBool};
 
 /// Server worker that handles the server logic
 pub struct ReceiveWorker {
-    running: Arc<AtomicBool>,
-    join_handle: Option<JoinHandle<()>>
+    handle: Option<StoppableHandle<()>>
 }
 
 /// 2^16 bytes - 8 byte UDP header, - 20 byte IP header
@@ -36,25 +36,21 @@ impl ReceiveWorker {
 
     /// start worker thread
     pub fn start(state: Arc<ServerState>) -> ReceiveWorker {
-        let running = Arc::new(AtomicBool::new(true));
-        let join_handle = {
-            let running = running.clone();
-            thread::spawn(move || {
-                Self::work(state, running);
-            })
-        };
+        let handle =
+            stoppable_thread::spawn(|stopped| {
+                Self::work(state, stopped);
+            });
 
         ReceiveWorker {
-            running,
-            join_handle: Some(join_handle),
+            handle: Some(handle),
         }
     }
 
     /// stop and join threads
     pub fn stop(&mut self) {
-        self.running.store(false, Ordering::SeqCst);
-        self.join_handle
+        self.handle
             .take().expect("failed to take handle")
+            .stop()
             .join().expect("failed to join thread");
     }
 
@@ -189,9 +185,9 @@ impl ReceiveWorker {
     }
 
     /// loop that is sequentially handling incoming messages
-    pub fn work(state: Arc<ServerState>, running: Arc<AtomicBool>) {
+    pub fn work(state: Arc<ServerState>, stopped: &SimpleAtomicBool) {
         let mut receive_buffer = [0u8; MAX_PACKET_SIZE];
-        while running.load(Ordering::SeqCst) {
+        while !stopped.get() {
             match state.socket.recv_from(&mut receive_buffer) {
                 Ok((size, src)) => {
                     let packet = Packet::from_buf(&mut receive_buffer[0..size]);

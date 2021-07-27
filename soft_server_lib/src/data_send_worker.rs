@@ -1,8 +1,5 @@
-use atomic::{Ordering};
 use crate::server_state::{ServerState};
 use std::sync::{Arc};
-use std::thread::JoinHandle;
-use std::sync::atomic::AtomicBool;
 use std::thread;
 use crate::connection_state::ConnectionState;
 use soft_shared_lib::field_types::SequenceNumber;
@@ -12,41 +9,37 @@ use soft_shared_lib::packet::data_packet::DataPacket;
 use log::debug;
 use soft_shared_lib::packet::packet::Packet;
 use std::time::Duration;
+use stoppable_thread::{StoppableHandle, SimpleAtomicBool};
 
 
 /// Server worker that handles outgoing messages
 pub struct DataSendWorker {
-    running: Arc<AtomicBool>,
-    join_handle: Option<JoinHandle<()>>,
+    handle: Option<StoppableHandle<()>>,
 }
 
 impl DataSendWorker {
 
     /// start worker thread
     pub fn start(state: Arc<ServerState>) -> DataSendWorker {
-        let running = Arc::new(AtomicBool::new(true));
-        let join_handle = {
-            let running = running.clone();
-            thread::spawn(move || {
-                Self::work(state, running);
-            })
-        };
+        let handle =
+            stoppable_thread::spawn(|stopped| {
+                Self::work(state, stopped);
+            });
         DataSendWorker {
-            running,
-            join_handle: Some(join_handle),
+            handle: Some(handle),
         }
     }
 
     /// stop and join threads
     pub fn stop(&mut self) {
-        self.running.store(false, Ordering::SeqCst);
-        self.join_handle
+        self.handle
             .take().expect("failed to take handle")
+            .stop()
             .join().expect("failed to join thread");
     }
 
-    pub fn work(state: Arc<ServerState>, running: Arc<AtomicBool>) {
-        while running.load(Ordering::SeqCst) {
+    pub fn work(state: Arc<ServerState>, stopped: &SimpleAtomicBool) {
+        while !stopped.get() {
             //TODO stop or delay if no connection is open
             match state.connection_pool.get_any_with_effective_window() {
                 None => {
