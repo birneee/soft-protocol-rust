@@ -40,6 +40,8 @@ impl Client{
         self.state.state_type.store(ClientStateType::Running, SeqCst);
         //TODO: make connection to server
         self.state.socket.connect(self.address).expect("connection failed");
+
+        self.make_handshake();
     }
 
     pub fn stop(&self) {

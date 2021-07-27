@@ -57,8 +57,6 @@ fn main() {
 
         cli.start();
 
-        cli.make_handshake();
-
         cli.stop();
     });
 
