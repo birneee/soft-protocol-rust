@@ -107,6 +107,7 @@ mod tests {
         const FILE_NAME: &str = "hello.txt";
         const FILE_SIZE: u64 = 4;
         const SOFT_VERSION: u8 = 1;
+        const RECEIVE_TIMEOUT: Duration = Duration::from_millis(2000); //TODO reduce
 
         //let _ = env_logger::builder().filter_level(LevelFilter::Debug).try_init();
 
@@ -115,7 +116,7 @@ mod tests {
         file.write(file_content.as_bytes()).unwrap();
         let server = Server::start("127.0.0.1:0", served_dir.into_path());
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-        client_socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+        client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
         // send Req
         let req_packet = ReqPacket::new_buf(max_packet_size, FILE_NAME);
         client_socket.send_to(req_packet.buf(), server.local_addr()).unwrap();
@@ -180,6 +181,7 @@ mod tests {
         const FILE_NAME: &str = "hello.txt";
         const FILE_CONTENT: &str = "hello world";
         const MAX_PACKET_SIZE: MaxPacketSize = 22;
+        const RECEIVE_TIMEOUT: Duration = Duration::from_millis(2000); //TODO reduce
 
         //let _ = env_logger::builder().filter_level(log::LevelFilter::Debug).try_init();
 
@@ -190,7 +192,7 @@ mod tests {
         let server = Server::start("127.0.0.1:0", served_dir.into_path());
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-        client_socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+        client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
         let mut received_file_content = Vec::<u8>::with_capacity(FILE_CONTENT.len());
 
         // send Req
@@ -225,7 +227,7 @@ mod tests {
         // migrate
         drop(client_socket);
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-        client_socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+        client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
 
         // send Ack 1
         client_socket.send_to(
