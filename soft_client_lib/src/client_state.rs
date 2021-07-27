@@ -1,6 +1,5 @@
 use atomic::Atomic;
 use std::net::UdpSocket;
-use std::sync::atomic::Ordering::SeqCst;
 
 pub struct ClientState {
     pub state_type: Atomic<ClientStateType>,
