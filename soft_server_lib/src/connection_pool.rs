@@ -21,6 +21,7 @@ impl ConnectionPool {
     pub fn new() -> ConnectionPool {
         ConnectionPool {
             cache: Mutex::new(TtlCache::new(MAX_SIMULTANEOUS_CONNECTIONS)),
+            /// notifies when a new connection is created
             connect_condvar: Condvar::new(),
         }
     }
