@@ -47,7 +47,7 @@ fn main() {
 
     let host = matches.value_of("host").unwrap().parse().expect("invalid IP address");
     let port = matches.value_of("port").unwrap().parse().expect("invalid port");
-    let filename = matches.value_of("file").unwrap().parse().expect("invalid filename");
+    let filename = matches.value_of("file").unwrap().parse().unwrap();
 
     let client = Arc::new(Client::init(port, host, filename));
 

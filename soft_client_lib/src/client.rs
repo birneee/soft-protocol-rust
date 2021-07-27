@@ -51,7 +51,7 @@ impl Client{
         self.state.state_type.store(ClientStateType::Stopped, SeqCst);
     }
 
-    pub fn make_handshake(&self) {
+    fn make_handshake(&self) {
         println!("making handshake...");
 
         let mut recv_buf = [MAX_PACKET_SIZE as u8];
