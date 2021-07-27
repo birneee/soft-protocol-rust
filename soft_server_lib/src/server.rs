@@ -102,17 +102,18 @@ mod tests {
     #[test_case("test", 100; "in one data packet")]
     #[test_case("test", 18; "in two data packet")]
     #[test_case("test", 17; "in four data packet")]
+    #[test_case("test".repeat(1000).as_str(), 17; "large file")]
     /// test simple transfers
     fn simple_transfer(file_content: &str, max_packet_size: MaxPacketSize) {
         const FILE_NAME: &str = "hello.txt";
-        const FILE_SIZE: u64 = 4;
         const SOFT_VERSION: u8 = 1;
-        const RECEIVE_TIMEOUT: Duration = Duration::from_millis(2000); //TODO reduce
+        const RECEIVE_TIMEOUT: Duration = Duration::from_millis(100);
 
         //let _ = env_logger::builder().filter_level(LevelFilter::Debug).try_init();
 
         let served_dir = TempDir::new("soft_test").unwrap();
         let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
+        let file_size = file_content.len() as FileSize;
         file.write(file_content.as_bytes()).unwrap();
         let server = Server::start("127.0.0.1:0", served_dir.into_path());
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -123,10 +124,10 @@ mod tests {
         // receive Acc
         let acc_packet: AccPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
         let connection_id = acc_packet.connection_id();
-        let file_size = acc_packet.file_size();
+        let received_file_size = acc_packet.file_size();
         let checksum = acc_packet.checksum();
         assert_eq!(acc_packet.version(), SOFT_VERSION);
-        assert_eq!(file_size, FILE_SIZE);
+        assert_eq!(received_file_size, file_size);
         drop(acc_packet);
         assert_eq!(server.state.connection_pool.len(), 1);
         assert_eq!(server.state.connection_pool.get(connection_id).unwrap().read().unwrap().max_window(), 0);
@@ -140,10 +141,10 @@ mod tests {
             ).buf(),
             server.local_addr()
         ).unwrap();
-        let mut received_file_content = Vec::<u8>::with_capacity(file_size as usize);
+        let mut received_file_content = Vec::<u8>::with_capacity(received_file_size as usize);
         let mut expected_sequence_number = 0;
         // transfer all data content
-        while received_file_content.len() as FileSize != file_size{
+        while received_file_content.len() as FileSize != received_file_size {
             // receive Data
             let data_packet: DataPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
             let connection_id = data_packet.connection_id();
@@ -181,7 +182,7 @@ mod tests {
         const FILE_NAME: &str = "hello.txt";
         const FILE_CONTENT: &str = "hello world";
         const MAX_PACKET_SIZE: MaxPacketSize = 22;
-        const RECEIVE_TIMEOUT: Duration = Duration::from_millis(2000); //TODO reduce
+        const RECEIVE_TIMEOUT: Duration = Duration::from_millis(100);
 
         //let _ = env_logger::builder().filter_level(log::LevelFilter::Debug).try_init();
 

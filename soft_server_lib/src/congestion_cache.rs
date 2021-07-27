@@ -30,28 +30,28 @@ impl CongestionState {
 ///
 /// entries expire after some time
 pub struct CongestionCache {
-    map: Mutex<TtlCache<SocketAddr, CongestionState>>,
+    cache: Mutex<TtlCache<SocketAddr, CongestionState>>,
 }
 
 impl CongestionCache {
     pub fn new() -> CongestionCache {
         return CongestionCache {
-            map: Mutex::new(TtlCache::new(MAX_SIMULTANEOUS_CONNECTIONS)),
+            cache: Mutex::new(TtlCache::new(MAX_SIMULTANEOUS_CONNECTIONS)),
         }
     }
 
     pub fn current_rtt(&self, addr: SocketAddr) -> Duration{
-        let cache = self.map.lock().unwrap();
+        let cache = self.cache.lock().unwrap();
         cache.get(&addr).map(|s| s.current_rtt).unwrap_or(INITIAL_RTT)
     }
 
     pub fn congestion_window(&self, addr: SocketAddr) -> CongestionWindow{
-        let cache = self.map.lock().unwrap();
+        let cache = self.cache.lock().unwrap();
         cache.get(&addr).map(|s| s.congestion_window).unwrap_or(INITIAL_CONGESTION_WINDOW)
     }
 
     fn update<F: Fn(&mut CongestionState)>(&self, addr: SocketAddr, f: F) {
-        let mut cache = self.map.lock().unwrap();
+        let mut cache = self.cache.lock().unwrap();
         let mut value = cache.get(&addr).map(|s| s.clone()).unwrap_or(CongestionState::new());
         f(&mut value);
         let ttl = congestion_window_cache_timeout(value.current_rtt);
