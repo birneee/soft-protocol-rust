@@ -1,4 +1,11 @@
-use clap::{Arg, App};
+use clap::{Arg, App, SubCommand};
+use soft_client_lib::client::Client;
+use std::net::IpAddr;
+use soft_client_lib::client_state::ClientStateType::{*};
+use std::thread;
+use std::sync::{Mutex, Arc};
+use std::thread::sleep;
+use std::time::Duration;
 
 fn main() {
     let matches = App::new("SOFT Protocol Client CLI")
@@ -38,16 +45,42 @@ fn main() {
         )
         .get_matches();
 
-    let host = matches.value_of("host").unwrap();
-    let port = matches.value_of("port").unwrap();
-    let file = matches.value_of("file").unwrap();
+    let host = matches.value_of("host").unwrap().parse().expect("invalid IP address");
+    let port = matches.value_of("port").unwrap().parse().expect("invalid port");
+    let filename = matches.value_of("file").unwrap().parse().unwrap();
 
-    println!("Connection: {} on Port {}: {}", host, port, file);
+    let client = Arc::new(Client::init(port, host, filename));
 
-    //TODO: Make connection
-    connect();
-}
+    let client_subthread = Arc::clone(&client);
+    let handle = thread::spawn(move || {
+        let mut cli = client_subthread;
 
-fn connect() {
+        cli.start();
 
+        cli.stop();
+    });
+
+    //TODO: We can do stuff here (note that this thread should not write to the client from now on but only read state information)
+    while true {
+        match client.state() {
+            Starting => println!("starting..."),
+            Running => println!("running..."),
+            Handshaken => println!("handshaken..."),
+            Downloading => println!("downloading..."),
+            Stopping => println!("stopping..."),
+            Stopped => {
+                println!("stopped");
+                break;
+            }
+            Error => {
+                println!("an error has occured");
+                break;
+            }
+        }
+        println!("{} %", client.progress());
+        sleep(Duration::new(1, 0));
+    }
+
+    handle.join().unwrap();
+    println!("done");
 }
