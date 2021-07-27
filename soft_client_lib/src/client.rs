@@ -1,15 +1,22 @@
 use std::net::{SocketAddr, Ipv4Addr, IpAddr, UdpSocket};
 use std::sync::Arc;
 use crate::client_state::{ClientState, ClientStateType};
-use soft_shared_lib::packet_view::req_packet_view;
 use atomic::Ordering;
 use std::sync::atomic::Ordering::SeqCst;
 use std::thread::sleep;
 use std::time::Duration;
+use soft_shared_lib::packet::unchecked_packet::UncheckedPacket;
+use soft_shared_lib::packet::req_packet::ReqPacket;
+use soft_shared_lib::packet::acc_packet::AccPacket;
+use soft_shared_lib::packet::packet_buf::PacketBuf;
+use soft_shared_lib::packet::packet::Packet;
+use std::borrow::BorrowMut;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
+const MAX_PACKET_SIZE: usize = 2usize.pow(16) - 8 - 20;
 
 pub struct Client {
+    address: SocketAddr,
     filename: String,
     state: Arc<ClientState>
 }
@@ -17,12 +24,13 @@ pub struct Client {
 impl Client{
     pub fn init(port: u16, ip: IpAddr, filename: String) -> Client {
         let address = SocketAddr::new(ip, port);
-        let socket = UdpSocket::bind(address).expect("failed to bind UDP socket");
+        let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
         let state = Arc::new(ClientState::new(socket));
 
         println!("creating client with {} to get file {}", address,filename);
 
         Client {
+            address,
             state,
             filename
         }
@@ -31,7 +39,7 @@ impl Client{
     pub fn start(&self) {
         self.state.state_type.store(ClientStateType::Running, SeqCst);
         //TODO: make connection to server
-        //TODO: handle connection
+        self.state.socket.connect(self.address).expect("connection failed");
     }
 
     pub fn stop(&self) {
@@ -41,30 +49,21 @@ impl Client{
         self.state.state_type.store(ClientStateType::Stopped, SeqCst);
     }
 
-    pub fn request_file(&self) {
-        println!("requesting file...");
+    pub fn make_handshake(&self) {
+        println!("making handshake...");
 
+        let mut recv_buf = [MAX_PACKET_SIZE as u8];
         //TODO: Implement File Request
+        //TODO: Create request packet
+        let mut buf = PacketBuf::Req(ReqPacket::new_buf(MAX_PACKET_SIZE as u16,&self.filename));
 
-        let buf = req_packet_view::ReqPacketView::create_packet_buffer(100, &self.filename);
+        self.state.socket.send(buf.buf()).expect("couldn't send message");
 
-        let tempRecv = UdpSocket::bind("127.0.0.1:3401").expect("couldn't bind to this receive address");
+        //TODO: Receive ACC packet
+        self.state.socket.recv(&mut recv_buf);
 
-        self.state.socket.connect("127.0.0.1:3401").expect("connection failed");
-        self.state.socket.send(&buf).expect("couldn't send message");
-
-        let mut recv_buf = [0; 50];
-
-        tempRecv.recv(&mut recv_buf);
-        for i in &recv_buf {
-            print!("{}", i);
-        }
-
-        let recv_packet = req_packet_view::ReqPacketView::from_buffer(&mut recv_buf);
-        println!("{}", recv_packet.file_name());
-
-        self.state.state_type.store(ClientStateType::Downloading, SeqCst);
-        sleep(Duration::new(10, 0));
+        self.state.state_type.store(ClientStateType::Handshaken, SeqCst);
+        sleep(Duration::new(2, 0));
     }
 
     pub fn state(&self) -> ClientStateType{return self.state.state_type.load(Ordering::SeqCst)}

@@ -45,12 +45,11 @@ fn main() {
         )
         .get_matches();
 
-    let host = matches.value_of("host").unwrap();
-    let port = matches.value_of("port").unwrap();
-    let file = matches.value_of("file").unwrap();
+    let host = matches.value_of("host").unwrap().parse().expect("invalid IP address");
+    let port = matches.value_of("port").unwrap().parse().expect("invalid port");
+    let filename = matches.value_of("file").unwrap().parse().expect("invalid filename");
 
-    println!("Connection: {} on Port {}: {}", host, port, file);
-    let client = Arc::new(Client::init(port, target, filename));
+    let client = Arc::new(Client::init(port, host, filename));
 
     let client_subthread = Arc::clone(&client);
     let handle = thread::spawn(move || {
@@ -58,18 +57,17 @@ fn main() {
 
         cli.start();
 
-        //TODO: Replace with actual work
-        sleep(Duration::new(5, 0));
-        cli.request_file();
+        cli.make_handshake();
 
         cli.stop();
     });
 
-    //TODO: We can do stuff here (note that this thread should not write to the client var but only read state information for now)
+    //TODO: We can do stuff here (note that this thread should not write to the client from now on but only read state information)
     while true {
         match client.state() {
             Starting => println!("starting..."),
             Running => println!("running..."),
+            Handshaken => println!("handshaken..."),
             Downloading => println!("downloading..."),
             Stopping => println!("stopping..."),
             Stopped => {

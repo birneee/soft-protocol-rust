@@ -23,5 +23,6 @@ pub enum ClientStateType {
     Stopping,
     Stopped,
     Downloading,
+    Handshaken,
     Error,
 }
