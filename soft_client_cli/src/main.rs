@@ -77,6 +77,7 @@ fn main() {
                 break;
             }
         }
+        println!("{} %", client.progress());
         sleep(Duration::new(1, 0));
     }
 

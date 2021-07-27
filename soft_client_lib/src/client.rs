@@ -42,6 +42,13 @@ impl Client{
         self.state.socket.connect(self.address).expect("connection failed");
 
         self.make_handshake();
+
+        //TODO: Implement real download
+        self.state.state_type.store(ClientStateType::Downloading, SeqCst);
+        for i in 1..100 {
+            sleep(Duration::new(2,0));
+            self.state.progress.store(i, SeqCst);
+        }
     }
 
     pub fn stop(&self) {
@@ -69,5 +76,7 @@ impl Client{
     }
 
     pub fn state(&self) -> ClientStateType{return self.state.state_type.load(Ordering::SeqCst)}
+
+    pub fn progress(&self) -> u8{return self.state.progress.load(Ordering::SeqCst)}
 }
 
