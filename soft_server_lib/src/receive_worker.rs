@@ -1,4 +1,3 @@
-use atomic::{Ordering};
 use soft_shared_lib::error::{Result, ErrorType};
 use crate::config::{FILE_READER_BUFFER_SIZE, SERVER_MAX_PACKET_SIZE};
 use crate::server_state::{ServerState};
@@ -7,9 +6,6 @@ use std::io::{BufReader, SeekFrom, Seek, ErrorKind};
 use std::os::unix::prelude::MetadataExt;
 use std::sync::Arc;
 use std::net::{SocketAddr};
-use std::thread::JoinHandle;
-use std::sync::atomic::AtomicBool;
-use std::thread;
 use soft_shared_lib::field_types::MaxPacketSize;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use std::cmp::min;

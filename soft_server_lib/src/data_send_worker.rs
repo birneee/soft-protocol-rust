@@ -1,6 +1,5 @@
 use crate::server_state::{ServerState};
 use std::sync::{Arc};
-use std::thread;
 use crate::connection_state::ConnectionState;
 use soft_shared_lib::field_types::SequenceNumber;
 use std::io::{Read, Write};
