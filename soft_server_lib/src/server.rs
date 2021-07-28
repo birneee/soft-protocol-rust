@@ -2,10 +2,11 @@ use atomic::{Ordering};
 use crate::server_state::{ServerStateType, ServerState};
 use crate::receive_worker::ReceiveWorker;
 use std::sync::Arc;
-use std::net::{SocketAddr, Ipv4Addr, IpAddr, UdpSocket, ToSocketAddrs};
+use std::net::{SocketAddr, Ipv4Addr, IpAddr, ToSocketAddrs};
 use crate::data_send_worker::DataSendWorker;
 use std::path::PathBuf;
 use std::time::Duration;
+use soft_shared_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 /// the server will block the thread for this time when
@@ -37,7 +38,7 @@ impl Server {
     /// * `addr` - The address to listen on
     /// * `served_dir` - The directory to serve
     pub fn start<A: ToSocketAddrs>(addr: A, served_dir: PathBuf) -> Server {
-        let socket = UdpSocket::bind(addr).expect("failed to bind UDP socket");
+        let socket = LossSimulationUdpSocket::bind(addr, 0.0, 0.0).expect("failed to bind UDP socket");
         socket.set_read_timeout(Some(SOCKET_READ_TIMEOUT)).unwrap();
 
         log::info!(
