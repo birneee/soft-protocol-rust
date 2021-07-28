@@ -18,3 +18,5 @@ pub fn congestion_window_cache_timeout(rtt: Duration) -> Duration {
 pub fn packet_loss_timeout(rtt: Duration) -> Duration {
     return rtt * 2;
 }
+
+pub fn connection_timeout() -> Duration { Duration::from_secs(60) }

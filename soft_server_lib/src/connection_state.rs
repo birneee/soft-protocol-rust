@@ -78,7 +78,7 @@ impl ConnectionState {
     }
 
     pub fn congestion_window(&self) -> CongestionWindow {
-        return self.congestion_cache.congestion_window(self.client_addr, self.max_packet_size);
+        return self.congestion_cache.congestion_window(self.client_addr);
     }
 
     pub fn max_window(&self) -> u16 {
@@ -93,15 +93,15 @@ impl ConnectionState {
     }
 
     pub fn current_rtt(&self) -> Duration {
-        return self.congestion_cache.current_rtt(self.client_addr, self.max_packet_size);
+        return self.congestion_cache.current_rtt(self.client_addr);
     }
 
     pub fn increase_congestion_window(&self) {
-        self.congestion_cache.increase(self.client_addr, self.max_packet_size);
+        self.congestion_cache.increase(self.client_addr);
     }
 
     pub fn decrease_congestion_window(&self) {
-        self.congestion_cache.decrease(self.client_addr, self.max_packet_size);
+        self.congestion_cache.decrease(self.client_addr);
     }
 
     /// true if all bytes have been read from the file

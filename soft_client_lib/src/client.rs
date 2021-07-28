@@ -1,16 +1,12 @@
-use std::net::{SocketAddr, Ipv4Addr, IpAddr, UdpSocket};
+use std::net::{SocketAddr, IpAddr, UdpSocket};
 use std::sync::Arc;
 use crate::client_state::{ClientState, ClientStateType};
 use atomic::Ordering;
 use std::sync::atomic::Ordering::SeqCst;
 use std::thread::sleep;
 use std::time::Duration;
-use soft_shared_lib::packet::unchecked_packet::UncheckedPacket;
 use soft_shared_lib::packet::req_packet::ReqPacket;
-use soft_shared_lib::packet::acc_packet::AccPacket;
 use soft_shared_lib::packet::packet_buf::PacketBuf;
-use soft_shared_lib::packet::packet::Packet;
-use std::borrow::BorrowMut;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 const MAX_PACKET_SIZE: usize = 2usize.pow(16) - 8 - 20;
@@ -69,7 +65,7 @@ impl Client{
         self.state.socket.send(buf.buf()).expect("couldn't send message");
 
         //TODO: Receive ACC packet
-        self.state.socket.recv(&mut recv_buf);
+        let _ = self.state.socket.recv(&mut recv_buf);
 
         self.state.state_type.store(ClientStateType::Handshaken, SeqCst);
         sleep(Duration::new(2, 0));
