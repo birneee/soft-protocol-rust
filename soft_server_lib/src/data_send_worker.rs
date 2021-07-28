@@ -47,12 +47,9 @@ impl DataSendWorker {
 
     pub fn work(state: Arc<ServerState>, running: Arc<AtomicBool>) {
         while running.load(Ordering::SeqCst) {
-            //TODO stop or delay if no connection is open
+            state.connection_pool.wait_for_connection(Duration::from_secs(1)); // wait if no clients are connected
             match state.connection_pool.get_any_with_effective_window() {
-                None => {
-                    //TODO find better method
-                    thread::sleep(Duration::from_secs(1));
-                }
+                None => {}
                 Some(connection_state) => {
                     let mut guard = connection_state.write().expect("failed to lock");
                     //TODO make implementation more efficient

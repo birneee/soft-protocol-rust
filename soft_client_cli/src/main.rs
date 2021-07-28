@@ -1,9 +1,8 @@
-use clap::{Arg, App, SubCommand};
+use clap::{Arg, App};
 use soft_client_lib::client::Client;
-use std::net::IpAddr;
 use soft_client_lib::client_state::ClientStateType::{*};
 use std::thread;
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -53,7 +52,7 @@ fn main() {
 
     let client_subthread = Arc::clone(&client);
     let handle = thread::spawn(move || {
-        let mut cli = client_subthread;
+        let cli = client_subthread;
 
         cli.start();
 
@@ -61,7 +60,7 @@ fn main() {
     });
 
     //TODO: We can do stuff here (note that this thread should not write to the client from now on but only read state information)
-    while true {
+    loop {
         match client.state() {
             Starting => println!("starting..."),
             Running => println!("running..."),

@@ -1,33 +1,20 @@
-use soft_shared_lib::field_types::MaxPacketSize;
 use std::net::SocketAddr;
-use std::collections::HashMap;
-use std::time::{Instant, Duration};
+use std::time::{Duration};
 use soft_shared_lib::times::{congestion_window_cache_timeout, INITIAL_RTT};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex};
 use log::debug;
+use ttl_cache::TtlCache;
+use crate::config::MAX_SIMULTANEOUS_CONNECTIONS;
 
 pub type CongestionWindow = u16; // same size as receive window
 
 const INITIAL_CONGESTION_WINDOW: CongestionWindow = 1;
-
-#[derive(PartialEq, Eq, Hash, Clone)]
-struct CacheKey {
-    addr: SocketAddr,
-    max_packet_size: MaxPacketSize
-}
-
-impl CacheKey {
-    pub fn new(addr: SocketAddr, max_packet_size: MaxPacketSize) -> Self {
-        CacheKey { addr, max_packet_size }
-    }
-}
 
 // TODO remove expired entries
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct CongestionState {
     pub congestion_window: CongestionWindow, // same size as receive window
     current_rtt: Duration,
-    timeout: Instant,
 }
 
 impl CongestionState {
@@ -35,53 +22,40 @@ impl CongestionState {
         return Self {
             congestion_window: INITIAL_CONGESTION_WINDOW,
             current_rtt: INITIAL_RTT,
-            timeout: Instant::now() + congestion_window_cache_timeout(INITIAL_RTT),
         };
-    }
-    fn reset_timeout(&mut self) {
-        self.timeout = Instant::now() + congestion_window_cache_timeout(self.current_rtt);
     }
 }
 
+/// stores congestion information
+///
+/// entries expire after some time
 pub struct CongestionCache {
-    map: Mutex<HashMap<CacheKey, CongestionState>>,
+    cache: Mutex<TtlCache<SocketAddr, CongestionState>>,
 }
 
 impl CongestionCache {
     pub fn new() -> CongestionCache {
         return CongestionCache {
-            map: Default::default()
+            cache: Mutex::new(TtlCache::new(MAX_SIMULTANEOUS_CONNECTIONS)),
         }
     }
 
-    /// get congestion state by source address and MPS
-    ///
-    /// resets timeout
-    fn get<'a>(lock: &'a mut MutexGuard<HashMap<CacheKey, CongestionState>>, addr: SocketAddr, max_packet_size: MaxPacketSize) -> &'a mut CongestionState {
-        let key = CacheKey::new(addr, max_packet_size);
-        let map = lock;
-        if map.contains_key(&key) {
-                let value = map.get_mut(&key).unwrap();
-                if Instant::now() > value.timeout {
-                    (*value) = CongestionState::new();
-                } else {
-                    value.reset_timeout();
-                }
-                return value
-        } else {
-            map.insert(key.clone(), CongestionState::new());
-            return map.get_mut(&key).unwrap();
-        }
+    pub fn current_rtt(&self, addr: SocketAddr) -> Duration{
+        let cache = self.cache.lock().unwrap();
+        cache.get(&addr).map(|s| s.current_rtt).unwrap_or(INITIAL_RTT)
     }
 
-
-
-    pub fn current_rtt(&self, addr: SocketAddr, max_packet_size: MaxPacketSize) -> Duration{
-        return Self::get(&mut self.map.lock().expect("failed to lock"), addr, max_packet_size).current_rtt
+    pub fn congestion_window(&self, addr: SocketAddr) -> CongestionWindow{
+        let cache = self.cache.lock().unwrap();
+        cache.get(&addr).map(|s| s.congestion_window).unwrap_or(INITIAL_CONGESTION_WINDOW)
     }
 
-    pub fn congestion_window(&self, addr: SocketAddr, max_packet_size: MaxPacketSize) -> CongestionWindow{
-        return Self::get(&mut self.map.lock().expect("failed to lock"), addr, max_packet_size).congestion_window
+    fn update<F: Fn(&mut CongestionState)>(&self, addr: SocketAddr, f: F) {
+        let mut cache = self.cache.lock().unwrap();
+        let mut value = cache.get(&addr).map(|s| s.clone()).unwrap_or(CongestionState::new());
+        f(&mut value);
+        let ttl = congestion_window_cache_timeout(value.current_rtt);
+        cache.insert(addr, value, ttl);
     }
 
     /// increase congestion window
@@ -89,19 +63,19 @@ impl CongestionCache {
     /// during slow start: +1
     ///
     /// during avoidance phase: + ( 1/cwnd )
-    pub fn increase(&self, addr: SocketAddr, max_packet_size: MaxPacketSize){
-        //TODO distinguish slow start and avoidance phase
-        let mut lock = self.map.lock().expect("failed to lock");
-        let value = Self::get(&mut lock, addr, max_packet_size);
-        value.congestion_window += 1;
-        debug!("updated congestion window of {} to {}", addr, value.congestion_window);
+    pub fn increase(&self, addr: SocketAddr){
+        self.update(addr, |value| {
+            value.congestion_window += 1;
+            //TODO distinguish slow start and avoidance phase
+            debug!("updated congestion window of {} to {}", addr, value.congestion_window);
+        });
     }
 
     /// halve the congestion window
-    pub fn decrease(&self, addr: SocketAddr, max_packet_size: MaxPacketSize){
-        let mut lock = self.map.lock().expect("failed to lock");
-        let value = Self::get(&mut lock, addr, max_packet_size);
-        value.congestion_window /= 2;
-        debug!("updated congestion window of {} to {}", addr, value.congestion_window);
+    pub fn decrease(&self, addr: SocketAddr){
+        self.update(addr, |value| {
+            value.congestion_window /= 1;
+            debug!("updated congestion window of {} to {}", addr, value.congestion_window);
+        });
     }
 }

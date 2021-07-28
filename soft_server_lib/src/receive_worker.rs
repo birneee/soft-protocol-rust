@@ -133,6 +133,7 @@ impl ReceiveWorker {
                 return None;
             }
             Ok(Ack(p)) => {
+                state.connection_pool.reset_connection_timeout(p.connection_id());
                 if let Some(connection) = state.connection_pool.get(p.connection_id()) {
                     let mut guard = connection.write().expect("failed to lock");
                     if *src != guard.client_addr {
