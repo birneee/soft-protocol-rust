@@ -99,8 +99,8 @@ impl ReceiveWorker {
                         return Some(PacketBuf::from(ErrPacket::new_buf(Unknown, 0)));
                     }
                 };
-                // reset the file pointer to 0
-                if let Err(e) = reader.seek(SeekFrom::Start(0)) {
+                // set file pointer to offset
+                if let Err(e) = reader.seek(SeekFrom::Start(p.offset())) {
                     eprintln!("{}", e);
                     return Some(PacketBuf::from(ErrPacket::new_buf(Unknown, 0)));
                 }
