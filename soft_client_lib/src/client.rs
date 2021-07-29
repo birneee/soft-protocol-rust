@@ -42,7 +42,7 @@ impl Client{
 
     pub fn start(&self) {
         self.state.state_type.store(ClientStateType::Running, SeqCst);
-        //TODO: make connection to server
+
         self.state.socket.connect(self.address).expect("connection failed");
 
         self.make_handshake();
@@ -59,7 +59,6 @@ impl Client{
     }
 
     fn make_handshake(&self) {
-        //TODO: Implement verbose flag
         if(self.verbose) {
             println!("making handshake...");
         }
@@ -86,7 +85,7 @@ impl Client{
             }
             Ok(Acc(p)) => {
                 self.state.connection_id.store(p.connection_id(), SeqCst);
-                //TODO: Implement verbose flag
+
                 if(self.verbose) {
                     println!("Connection ID: {}", p.connection_id());
                     println!("File Size: {}", p.file_size());
