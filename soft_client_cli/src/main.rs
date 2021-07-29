@@ -76,7 +76,8 @@ fn main() {
                 break;
             }
         }
-        println!("{} %", client.progress());
+        //TODO: Implement Client progress view
+        //println!("{} %", client.progress());
         sleep(Duration::new(1, 0));
     }
 
