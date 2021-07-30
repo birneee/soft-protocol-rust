@@ -106,6 +106,7 @@ impl Client{
 
     fn do_file_transfer(&self) {
         //TODO: check for file checksums
+        //TODO create file before creating connection
         let file = File::create(&self.filename);
 
         let mut recv_buf = [0; MAX_PACKET_SIZE];
