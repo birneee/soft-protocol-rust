@@ -145,7 +145,7 @@ impl Client{
                     let _ = self.state.socket.send(send_buf.buf());
 
                     let current_progress = self.state.progress.load(SeqCst);
-                    self.state.progress.store(current_filesize + p.data().len() as u64, SeqCst);
+                    self.state.progress.store(current_progress + p.data().len() as u64, SeqCst);
                 }
                 Ok(Packet::Err(_)) => {
                     eprintln!("some error has occured");
