@@ -74,7 +74,7 @@ impl PacketBuf {
         }
     }
 
-    fn view<'a>(&'a mut self) -> Packet<'a> {
+    fn view(&mut self) -> Packet {
         Packet::from_buf(self.buf_mut()).unwrap()
     }
 
