@@ -6,7 +6,6 @@ use std::sync::atomic::Ordering::SeqCst;
 use std::thread::sleep;
 use std::time::Duration;
 use soft_shared_lib::packet::req_packet::ReqPacket;
-use soft_shared_lib::packet::acc_packet::AccPacket;
 use soft_shared_lib::packet::ack_packet::AckPacket;
 use soft_shared_lib::packet::packet_buf::PacketBuf;
 use soft_shared_lib::packet::packet::Packet;
@@ -59,7 +58,7 @@ impl Client{
     }
 
     fn make_handshake(&self) {
-        if(self.verbose) {
+        if self.verbose {
             println!("making handshake...");
         }
 
@@ -69,11 +68,11 @@ impl Client{
 
         self.state.socket.send(buf.buf()).expect("couldn't send message");
 
-        self.state.socket.recv(&mut recv_buf);
+        let _ = self.state.socket.recv(&mut recv_buf);
 
         let unchecked_packet = Packet::from_buf(&mut recv_buf);
 
-        match (unchecked_packet) {
+        match unchecked_packet {
             Err(UnsupportedSoftVersion(_)) => {
                 eprintln!("received unsupported packet");
             }
@@ -86,7 +85,7 @@ impl Client{
             Ok(Acc(p)) => {
                 self.state.connection_id.store(p.connection_id(), SeqCst);
 
-                if(self.verbose) {
+                if self.verbose {
                     println!("Connection ID: {}", p.connection_id());
                     println!("File Size: {}", p.file_size());
                     println!("File checksum: {}", p.checksum()[0]);
