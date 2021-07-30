@@ -144,7 +144,7 @@ impl Client{
                     let mut send_buf = PacketBuf::Ack(AckPacket::new_buf(1, self.state.connection_id.load(SeqCst), self.state.sequence_nr.load(SeqCst)));
                     let _ = self.state.socket.send(send_buf.buf());
 
-                    let current_filesize = self.state.progress.load(SeqCst);
+                    let current_progress = self.state.progress.load(SeqCst);
                     self.state.progress.store(current_filesize + p.data().len() as u64, SeqCst);
                 }
                 Ok(Packet::Err(_)) => {
@@ -160,4 +160,3 @@ impl Client{
         return (self.state.progress.load(SeqCst) as f64 / self.state.filesize.load(SeqCst) as f64) * 100.0;
     }
 }
-
