@@ -1,0 +1,7 @@
+[package]
+name = "soft_shared_async_lib"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+soft_shared_lib = { path = "../soft_shared_lib" }
