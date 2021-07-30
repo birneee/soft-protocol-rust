@@ -4,6 +4,7 @@ use std::net::UdpSocket;
 pub struct ClientState {
     //Todo: determine what needs to be atomic and what not
     pub state_type: Atomic<ClientStateType>,
+    /// number of received bytes
     pub progress: Atomic<u64>,
     pub socket: UdpSocket,
     pub connection_id: Atomic<u32>,
