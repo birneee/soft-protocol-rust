@@ -10,6 +10,8 @@ use crate::general::byte_view::ByteView;
 use crate::packet::err_packet::ErrPacket;
 use crate::packet::ack_packet::AckPacket;
 use crate::packet::data_packet::DataPacket;
+use crate::field_types::ConnectionId;
+use crate::packet::general_packet::GeneralPacket;
 
 /// Union type of all packet views
 pub enum Packet<'a> {
@@ -54,6 +56,17 @@ impl<'a> Packet<'a> {
             Self::Data(_) => PacketType::Data,
             Self::Ack(_) => PacketType::Ack,
             Self::Err(_) => PacketType::Err,
+        }
+    }
+
+    /// get connection id if the packet has such a field
+    pub fn connection_id_or_none(&self) -> Option<ConnectionId> {
+        match self {
+            Packet::Req(p) => { p.connection_id_or_none() }
+            Packet::Acc(p) => { p.connection_id_or_none() }
+            Packet::Data(p) => { p.connection_id_or_none() }
+            Packet::Ack(p) => { p.connection_id_or_none() }
+            Packet::Err(p) => { p.connection_id_or_none() }
         }
     }
 }
