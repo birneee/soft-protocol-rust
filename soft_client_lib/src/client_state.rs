@@ -4,9 +4,11 @@ use std::net::UdpSocket;
 pub struct ClientState {
     //Todo: determine what needs to be atomic and what not
     pub state_type: Atomic<ClientStateType>,
-    pub progress: Atomic<u8>,
+    pub progress: Atomic<u64>,
     pub socket: UdpSocket,
-    pub connection_id: Atomic<u32>
+    pub connection_id: Atomic<u32>,
+    pub sequence_nr: Atomic<u64>,
+    pub filesize: Atomic<u64>
 }
 
 impl ClientState {
@@ -15,7 +17,9 @@ impl ClientState {
             state_type: Atomic::new(ClientStateType::Starting),
             progress: Atomic::new(0),
             socket,
-            connection_id: Atomic::new(32)
+            connection_id: Atomic::new(32),
+            sequence_nr: Atomic::new(0),
+            filesize: Atomic::new(0)
         }
     }
 }
