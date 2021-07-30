@@ -41,7 +41,6 @@ impl Client{
     }
 
     pub fn start(&self) {
-        self.state.state_type.store(ClientStateType::Running, SeqCst);
 
         self.state.socket.connect(self.address).expect("connection failed");
 
@@ -59,10 +58,6 @@ impl Client{
     }
 
     fn make_handshake(&self) {
-        if self.verbose {
-            println!("making handshake...");
-        }
-
         let mut recv_buf = [0; MAX_PACKET_SIZE];
 
         let mut send_buf = PacketBuf::Req(ReqPacket::new_buf(MAX_PACKET_SIZE as u16, &self.filename));
@@ -106,7 +101,6 @@ impl Client{
             }
         }
 
-        self.state.state_type.store(ClientStateType::Handshaken, SeqCst);
         sleep(Duration::new(1, 0));
     }
 
@@ -157,6 +151,6 @@ impl Client{
     pub fn state(&self) -> ClientStateType{return self.state.state_type.load(SeqCst)}
 
     pub fn progress(&self) -> f64{
-        return (self.state.progress.load(SeqCst) as f64 / self.state.filesize.load(SeqCst) as f64) * 100.0;
+        return self.state.progress.load(SeqCst) as f64 / self.state.filesize.load(SeqCst) as f64;
     }
 }

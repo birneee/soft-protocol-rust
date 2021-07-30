@@ -15,7 +15,7 @@ pub struct ClientState {
 impl ClientState {
     pub fn new(socket: UdpSocket) -> ClientState {
         ClientState {
-            state_type: Atomic::new(ClientStateType::Starting),
+            state_type: Atomic::new(ClientStateType::Handshaking),
             progress: Atomic::new(0),
             socket,
             connection_id: Atomic::new(32),
@@ -27,11 +27,9 @@ impl ClientState {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ClientStateType {
-    Starting,
-    Running,
     Stopping,
     Stopped,
     Downloading,
-    Handshaken,
+    Handshaking,
     Error,
 }

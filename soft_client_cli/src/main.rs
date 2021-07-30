@@ -64,13 +64,11 @@ fn main() {
     //TODO: Refine timing of status messages (currently is set to a status message every 1 second)
     loop {
         match client.state() {
-            Starting => println!("starting..."),
-            Running => println!("running..."),
-            Handshaken => println!("handshaken..."),
+            Handshaking => println!("performing handshake..."),
             Downloading => {
                 //TODO: Refine Client progress view
                 let temp_progress = client.progress();
-                println!("Downloading: {} %", temp_progress);
+                println!("Downloading: {}", temp_progress);
             },
             Stopping => {
                 println!("Download complete!");
