@@ -1,7 +1,6 @@
 use std::net::{SocketAddr, IpAddr, UdpSocket};
 use std::sync::Arc;
 use crate::client_state::{ClientState, ClientStateType};
-use atomic::Ordering;
 use std::sync::atomic::Ordering::SeqCst;
 use std::thread::sleep;
 use std::time::Duration;
@@ -12,8 +11,7 @@ use soft_shared_lib::packet::packet::Packet;
 use soft_shared_lib::packet::packet::Packet::{Acc, Req, Data, Ack};
 use soft_shared_lib::error::ErrorType::{UnsupportedSoftVersion};
 use std::fs::File;
-use std::io::{Write, BufRead};
-use std::ptr::null;
+use std::io::{Write};
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 const MAX_PACKET_SIZE: usize = 2usize.pow(16) - 8 - 20;
@@ -49,14 +47,14 @@ impl Client{
 
         self.make_handshake();
 
-        //TODO: Implement real download
+        //TODO: Refine download
         self.do_file_transfer();
     }
 
     pub fn stop(&self) {
         self.state.state_type.store(ClientStateType::Stopping, SeqCst);
         //TODO: Implement Client stopping logic
-        sleep(Duration::new(3, 0));
+        sleep(Duration::new(1, 0));
         self.state.state_type.store(ClientStateType::Stopped, SeqCst);
     }
 
@@ -113,16 +111,18 @@ impl Client{
     }
 
     fn do_file_transfer(&self) {
-        let mut file = File::create(&self.filename);
+        //TODO: check for file checksums
+        let file = File::create(&self.filename);
 
         let mut recv_buf = [0; MAX_PACKET_SIZE];
 
+        self.state.state_type.store(ClientStateType::Downloading, SeqCst);
         while self.state.progress.load(SeqCst) != self.state.filesize.load(SeqCst) {
             let packet_size = self.state.socket.recv(&mut recv_buf).unwrap();
 
             let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
 
-            match (unchecked_packet) {
+            match unchecked_packet {
                 Err(UnsupportedSoftVersion(_)) => {
                     eprintln!("received unsupported packet");
                 }
@@ -140,13 +140,12 @@ impl Client{
                 }
                 Ok(Data(p)) => {
                     self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
-                    file.as_ref().unwrap().write(p.data());
+                    let _ = file.as_ref().unwrap().write(p.data());
                     let mut send_buf = PacketBuf::Ack(AckPacket::new_buf(1, self.state.connection_id.load(SeqCst), self.state.sequence_nr.load(SeqCst)));
-                    self.state.socket.send(send_buf.buf());
+                    let _ = self.state.socket.send(send_buf.buf());
 
-                    let mut current_filesize = self.state.progress.load(SeqCst);
+                    let current_filesize = self.state.progress.load(SeqCst);
                     self.state.progress.store(current_filesize + p.data().len() as u64, SeqCst);
-                    println!("current file size: {}", self.state.progress.load(SeqCst));
                 }
                 Ok(Packet::Err(_)) => {
                     eprintln!("some error has occured");
@@ -155,8 +154,10 @@ impl Client{
         }
     }
 
-    pub fn state(&self) -> ClientStateType{return self.state.state_type.load(Ordering::SeqCst)}
+    pub fn state(&self) -> ClientStateType{return self.state.state_type.load(SeqCst)}
 
-    pub fn progress(&self) -> u64{return self.state.progress.load(Ordering::SeqCst)}
+    pub fn progress(&self) -> f64{
+        return (self.state.progress.load(SeqCst) as f64 / self.state.filesize.load(SeqCst) as f64) * 100.0;
+    }
 }
 

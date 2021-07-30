@@ -5,6 +5,7 @@ use std::thread;
 use std::sync::{Arc};
 use std::thread::sleep;
 use std::time::Duration;
+use soft_client_lib::client_state::ClientStateType::Downloading;
 
 fn main() {
     let matches = App::new("SOFT Protocol Client CLI")
@@ -60,13 +61,20 @@ fn main() {
     });
 
     //TODO: We can do stuff here (note that this thread should not write to the client from now on but only read state information)
+    //TODO: Refine timing of status messages (currently is set to a status message every 1 second)
     loop {
         match client.state() {
             Starting => println!("starting..."),
             Running => println!("running..."),
             Handshaken => println!("handshaken..."),
-            Downloading => println!("downloading..."),
-            Stopping => println!("stopping..."),
+            Downloading => {
+                //TODO: Refine Client progress view
+                let temp_progress = client.progress();
+                println!("Downloading: {} %", temp_progress);
+            },
+            Stopping => {
+                println!("Download complete!");
+                println!("stopping...") },
             Stopped => {
                 println!("stopped");
                 break;
@@ -76,8 +84,6 @@ fn main() {
                 break;
             }
         }
-        //TODO: Implement Client progress view
-        //println!("{} %", client.progress());
         sleep(Duration::new(1, 0));
     }
 
