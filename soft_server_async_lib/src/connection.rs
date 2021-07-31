@@ -49,7 +49,7 @@ impl Connection {
         });
     }
 
-    fn stopped(&self) -> bool {
+    pub fn stopped(&self) -> bool {
         self.packet_sender.is_closed()
     }
 
