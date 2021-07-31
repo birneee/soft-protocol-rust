@@ -70,9 +70,7 @@ fn main() {
     let handle = thread::spawn(move || {
         let client = client_subthread;
 
-        client.start();
-
-        client.stop(true);
+        client.run();
     });
 
     let handshake_pb = ProgressBar::new_spinner();
