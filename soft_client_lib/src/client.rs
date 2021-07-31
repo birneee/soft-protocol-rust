@@ -146,7 +146,7 @@ impl Client {
     /// Deletes the checksum file from the directory.
     /// This gets called on any runtime/hard errors.
     ///
-    pub fn stop(&self) {
+    pub fn stop(&self, clean_up: bool) {
         if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
             return;
         }
@@ -154,7 +154,9 @@ impl Client {
         self.state
             .state_type
             .store(ClientStateType::Stopping, SeqCst);
-        Client::clean_checksum(&self.filename);
+        if clean_up {
+            Client::clean_checksum(&self.filename);
+        }
         self.state
             .state_type
             .store(ClientStateType::Stopped, SeqCst);
@@ -165,41 +167,41 @@ impl Client {
             soft_shared_lib::soft_error_code::SoftErrorCode::Stop => todo!(),
             soft_shared_lib::soft_error_code::SoftErrorCode::Unknown => {
                 log::error!("Unknown Error Occoured, aborting");
-                self.stop()
+                self.stop(false)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::FileNotFound => {
                 log::error!(
                     "File not found on the server, aborting download of {}",
                     self.filename
                 );
-                self.stop()
+                self.stop(true)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::ChecksumNotReady => {
                 log::error!("Checksum Not Ready, aborting download of {}", self.filename);
-                self.stop()
+                self.stop(false)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::InvalidOffset => {
                 log::error!(
-                    "Partial file download invalidated, please delete and redownload,
+                    "Partial file download invalidated, please delete and re-download,
                             aborting download of {}",
                     self.filename
                 );
-                self.stop()
+                self.stop(true)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::UnsupportedVersion => {
                 log::error!(
                     "Client running a unsupported version, aborting download of {}",
                     self.filename
                 );
-                self.stop()
+                self.stop(false)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::FileChanged => {
                 log::error!("File Changed, aborting download of {}", self.filename);
-                self.stop()
+                self.stop(true)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::BadPacket => {
                 log::error!("Bad packet found, aborting download of {}", self.filename);
-                self.stop()
+                self.stop(false)
             }
         }
     }
@@ -234,13 +236,13 @@ impl Client {
                     "Server is running a unsupported version of the protocol: {}",
                     version
                 );
-                return self.stop();
+                return self.stop(false);
             }
             Ok(Acc(p)) => {
                 if let Some(checksum) = self.checksum {
                     if p.checksum() != checksum {
                         log::error!("File invalid, checksum does not match. {}", self.filename);
-                        self.stop();
+                        self.stop(true);
                         return;
                     } else {
                         log::debug!("File checksums are equal. Continuing download");
