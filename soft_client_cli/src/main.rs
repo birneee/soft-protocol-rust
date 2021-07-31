@@ -53,7 +53,6 @@ fn main() {
         )
         .get_matches();
 
-    info!("Starting SOFT protocol client");
     let host = matches.value_of("host").unwrap().parse().expect("invalid IP address");
     let port = matches.value_of("port").unwrap().parse().expect("invalid port");
     let filename = matches.value_of("file").unwrap().parse().unwrap();
@@ -61,9 +60,10 @@ fn main() {
     if matches.is_present("verbose") {
         env_logger::builder().filter_level(LevelFilter::Debug).init();
     } else {
-        env_logger::builder().filter_level(LevelFilter::Info).init();
+        env_logger::builder().filter_level(LevelFilter::Error).init();
     }
 
+    info!("Starting SOFT protocol client");
     let client = Arc::new(Client::init(port, host, filename));
     let client_subthread = Arc::clone(&client);
 
@@ -110,6 +110,7 @@ fn main() {
                     current_state = Downloading;
                 }
                 let _percentage = client.progress();
+                todo!("Build progress bar from percentage");
                 //println!("Downloading {}", (percentage * 100.0) as u64);
             },
             Validating => {

@@ -17,7 +17,7 @@ pub struct ClientState {
 impl ClientState {
     pub fn new(socket: UdpSocket) -> ClientState {
         ClientState {
-            state_type: Atomic::new(ClientStateType::Handshaking),
+            state_type: Atomic::new(ClientStateType::Starting),
             progress: Atomic::new(0),
             socket,
             connection_id: Atomic::new(32),

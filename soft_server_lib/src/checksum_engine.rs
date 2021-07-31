@@ -1,10 +1,9 @@
-use sha2::{Digest, Sha256};
+use soft_shared_lib::helper::sha256_helper::generate_checksum;
 use soft_shared_lib::{error::Result, field_types::Checksum};
 use std::fs::File;
-use std::io::copy;
 use std::{
     collections::HashMap,
-    io::{BufReader},
+    io::BufReader,
     sync::RwLock,
 };
 
@@ -32,13 +31,7 @@ impl ChecksumEngine {
                 None => (),
             };
         }
-        let mut checksum: Checksum = [0; 32];
-        let mut sha256 = Sha256::new();
-
-        copy(reader, &mut sha256)?;
-        let checksum_value = sha256.finalize();
-
-        checksum.clone_from_slice(checksum_value.as_slice());
+        let checksum = generate_checksum(reader);
 
         let mut guard = self.cache.write().expect("failed to lock");
         (*guard).insert(file_name.clone(), checksum);

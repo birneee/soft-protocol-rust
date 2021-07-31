@@ -1,9 +1,8 @@
 use crate::client_state::{ClientState, ClientStateType};
 use log::{info};
-use soft_shared_lib::checksum::generate_checksum;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use soft_shared_lib::field_types::{Checksum, Offset};
-use soft_shared_lib::helper::sha256_helper::sha256_to_hex_string;
+use soft_shared_lib::helper::sha256_helper::{generate_checksum, sha256_to_hex_string};
 use soft_shared_lib::packet::ack_packet::AckPacket;
 use soft_shared_lib::packet::err_packet::ErrPacket;
 use soft_shared_lib::packet::packet::Packet;
@@ -56,7 +55,8 @@ impl Client {
                 // Set the progress to the offset
                 state.progress.store(offset, SeqCst);
             } else {
-                log::info!("File already downloaded");
+                log::info!("File already present");
+                // Preemptively exits out of each client operation
                 state.state_type.store(ClientStateType::Stopped, SeqCst);
             }
         } else {
@@ -73,6 +73,12 @@ impl Client {
         }
     }
 
+    /// read the checksum from the separate checksum file.
+    /// used for download resumption.
+    /// None if file does not exist
+    ///
+    /// # Arguments
+    /// * `filename` - The filename to retrieve checksum for
     fn get_checksum(filename: &str) -> Option<Checksum> {
         if Path::new(format!("{}.checksum", &filename).as_str()).exists() {
             let mut checksum: Checksum = [0; 32];
@@ -89,6 +95,11 @@ impl Client {
         }
     }
 
+    /// store checksum in the separate checksum file
+    /// required for download resumption
+    ///
+    /// # Arguments
+    /// * `checksum` - The checksum to be stored
     fn store_checksum(&self, mut checksum: Checksum) {
         let mut checksum_file = OpenOptions::new()
             .create(true)
@@ -100,6 +111,7 @@ impl Client {
             .expect("Unable to store checksum");
     }
 
+    /// remove the separate checksum file
     fn clean_checksum(filename: &String) {
         if Path::new(format!("{}.checksum", &filename).as_str()).exists() {
             fs::remove_file(format!("{}.checksum", &filename))
@@ -127,7 +139,16 @@ impl Client {
         self.do_file_transfer();
     }
 
+    /// Updates the client state to stopping.
+    /// if the client is already stopped, exits early
+    /// Deletes the checksum file from the directory.
+    /// This gets called on any runtime/hard errors.
+    ///
     pub fn stop(&self) {
+        if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
+            return;
+        }
+
         self.state
             .state_type
             .store(ClientStateType::Stopping, SeqCst);
@@ -149,10 +170,6 @@ impl Client {
                     "File not found on the server, aborting download of {}",
                     self.filename
                 );
-                self.stop()
-            }
-            soft_shared_lib::soft_error_code::SoftErrorCode::AccessDenied => {
-                log::error!("Access Denied, aborting download of {}", self.filename);
                 self.stop()
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::ChecksumNotReady => {
