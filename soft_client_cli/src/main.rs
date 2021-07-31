@@ -72,7 +72,7 @@ fn main() {
 
         client.start();
 
-        client.stop();
+        client.stop(true);
     });
 
     let handshake_pb = ProgressBar::new_spinner();

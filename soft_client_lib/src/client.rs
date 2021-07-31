@@ -174,7 +174,7 @@ impl Client {
                     "File not found on the server, aborting download of {}",
                     self.filename
                 );
-                self.stop(true)
+                self.stop(false)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::ChecksumNotReady => {
                 log::error!("Checksum Not Ready, aborting download of {}", self.filename);
@@ -186,7 +186,7 @@ impl Client {
                             aborting download of {}",
                     self.filename
                 );
-                self.stop(true)
+                self.stop(false)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::UnsupportedVersion => {
                 log::error!(
@@ -242,7 +242,7 @@ impl Client {
                 if let Some(checksum) = self.checksum {
                     if p.checksum() != checksum {
                         log::error!("File invalid, checksum does not match. {}", self.filename);
-                        self.stop(true);
+                        self.stop(false);
                         return;
                     } else {
                         log::debug!("File checksums are equal. Continuing download");
