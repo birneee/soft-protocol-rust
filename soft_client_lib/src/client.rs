@@ -121,10 +121,6 @@ impl Client {
         }
     }
 
-    pub fn get_file_size(&self) -> u64 {
-        return self.state.filesize.load(SeqCst);
-    }
-
     pub fn run(&self) {
         if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
             return;
@@ -148,7 +144,7 @@ impl Client {
     /// Deletes the checksum file from the directory.
     /// This gets called on any runtime/hard errors.
     ///
-    pub fn clean_up(&self, clean_up: bool) {
+    fn clean_up(&self, clean_up: bool) {
         if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
             return;
         }
@@ -277,7 +273,7 @@ impl Client {
         }
     }
 
-    pub fn validate_download(&self) {
+    fn validate_download(&self) {
         self.state
             .state_type
             .store(ClientStateType::Validating, SeqCst);
