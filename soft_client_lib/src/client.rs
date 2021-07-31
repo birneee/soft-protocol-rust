@@ -16,6 +16,7 @@ use std::os::unix::prelude::MetadataExt;
 use std::path::Path;
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 // I had to adjust the MAX PACKET SIZE by a little (-50) to transfer a large file.
@@ -33,6 +34,7 @@ impl Client {
     pub fn init(port: u16, ip: IpAddr, filename: String) -> Client {
         let address = SocketAddr::new(ip, port);
         let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
+        socket.set_read_timeout(Some(Duration::new(3, 0))).expect("Unable to set read timeout for socket");
         let state = Arc::new(ClientState::new(socket));
         let download_buffer: File;
         let mut offset: Offset = 0;
@@ -205,6 +207,9 @@ impl Client {
     fn make_handshake(&self) {
         let mut recv_buf = [0; MAX_PACKET_SIZE];
         let mut send_buf: PacketBuf;
+
+        self.state.state_type.store(ClientStateType::Handshaking, SeqCst);
+
         send_buf = PacketBuf::Req(ReqPacket::new_buf(
             MAX_PACKET_SIZE as u16,
             &self.filename,
