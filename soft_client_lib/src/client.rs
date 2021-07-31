@@ -205,6 +205,10 @@ impl Client {
     }
 
     fn make_handshake(&self) {
+        if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
+            return;
+        }
+
         let mut recv_buf = [0; MAX_PACKET_SIZE];
         let mut send_buf: PacketBuf;
 
