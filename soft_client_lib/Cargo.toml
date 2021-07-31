@@ -6,3 +6,4 @@ edition = "2018"
 [dependencies]
 soft_shared_lib = { path = "../soft_shared_lib" }
 atomic = "0.5"
+log = "0.4.14"

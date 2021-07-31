@@ -1,11 +1,12 @@
 use clap::{Arg, App};
+use log::{LevelFilter, info};
 use soft_client_lib::client::Client;
-use soft_client_lib::client_state::ClientStateType::{*};
+use soft_client_lib::client_state::ClientStateType::{*, self};
+use std::sync::Arc;
 use std::thread;
-use std::sync::{Arc};
-use std::thread::sleep;
-use std::time::Duration;
 use soft_client_lib::client_state::ClientStateType::Downloading;
+
+use indicatif::{ProgressBar, ProgressStyle};
 
 fn main() {
     let matches = App::new("SOFT Protocol Client CLI")
@@ -43,36 +44,84 @@ fn main() {
             .help("The file to request")
             .required(true)
         )
+        .arg(Arg::with_name("verbose")
+            .short("v")
+            .long("verbose")
+            .value_name("VERBOSE")
+            .help("client prints execution details")
+            .takes_value(false)
+        )
         .get_matches();
 
     let host = matches.value_of("host").unwrap().parse().expect("invalid IP address");
     let port = matches.value_of("port").unwrap().parse().expect("invalid port");
     let filename = matches.value_of("file").unwrap().parse().unwrap();
 
+    if matches.is_present("verbose") {
+        env_logger::builder().filter_level(LevelFilter::Debug).init();
+    } else {
+        env_logger::builder().filter_level(LevelFilter::Error).init();
+    }
+
+    info!("Starting SOFT protocol client");
     let client = Arc::new(Client::init(port, host, filename));
-
     let client_subthread = Arc::clone(&client);
+
     let handle = thread::spawn(move || {
-        let cli = client_subthread;
+        let client = client_subthread;
 
-        cli.start();
-
-        cli.stop();
+        client.run();
     });
 
+    let handshake_pb = ProgressBar::new_spinner();
+
+    let mut current_state: ClientStateType = Starting;
     //TODO: We can do stuff here (note that this thread should not write to the client from now on but only read state information)
     //TODO: Refine timing of status messages (currently is set to a status message every 1 second)
     loop {
         match client.state() {
-            Handshaking => println!("performing handshake..."),
+            Handshaking => {
+                // This handles the state changes alone.
+                if current_state == Starting {
+                    current_state = Handshaking;
+                    handshake_pb.enable_steady_tick(80);
+                    handshake_pb.set_style(
+                        ProgressStyle::default_spinner()
+                            .tick_strings(&[
+                                "⣾",
+                                "⣽",
+                                "⣻",
+                                "⢿",
+                                "⡿",
+                                "⣟",
+                                "⣯",
+                                "⣷"
+                            ])
+                            .template("{spinner:.blue} {msg}"),
+                    );
+                    handshake_pb.set_message("Handshaking...");
+                }
+            }
             Downloading => {
-                //TODO: Refine Client progress view
-                let temp_progress = client.progress();
-                println!("Downloading: {}", temp_progress);
+                if current_state == Handshaking {
+                    handshake_pb.finish_and_clear();
+                    current_state = Downloading;
+                }
+                let _percentage = client.progress();
+                todo!("Build progress bar from percentage");
+                //println!("Downloading {}", (percentage * 100.0) as u64);
+            },
+            Validating => {
+                if current_state == Downloading {
+                    // Validating takes time, use a progress bar.
+                    current_state = Validating;
+                }
             },
             Stopping => {
-                println!("Download complete!");
-                println!("stopping...") },
+                if current_state == Validating {
+                    current_state = Stopping
+                }
+            },
             Stopped => {
                 println!("stopped");
                 break;
@@ -81,8 +130,8 @@ fn main() {
                 println!("an error has occured");
                 break;
             }
+            Starting => todo!(),
         }
-        sleep(Duration::new(1, 0));
     }
 
     handle.join().unwrap();

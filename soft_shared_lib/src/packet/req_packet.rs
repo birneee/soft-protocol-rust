@@ -17,7 +17,7 @@ pub struct ReqPacket {
 
 impl ReqPacket {
 
-    pub fn new_buf(max_packet_size: MaxPacketSize, file_name: &str) -> ReqPacketBuf {
+    pub fn new_buf(max_packet_size: MaxPacketSize, file_name: &str, offset: Offset) -> ReqPacketBuf {
         let size = ReqPacket::get_required_buffer_size(&file_name);
         assert!(size <= SOFT_MAX_PACKET_SIZE);
         let mut buf = vec![0u8; size];
@@ -26,6 +26,7 @@ impl ReqPacket {
         packet.set_packet_type(PacketType::Req);
         packet.set_max_packet_size(max_packet_size);
         packet.set_file_name(file_name);
+        packet.set_offset(offset);
         buf.try_into().unwrap()
     }
 
