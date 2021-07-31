@@ -120,7 +120,7 @@ mod tests {
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
         // send Req
-        let req_packet = ReqPacket::new_buf(max_packet_size, FILE_NAME);
+        let req_packet = ReqPacket::new_buf(max_packet_size, FILE_NAME, 0);
         client_socket.send_to(req_packet.buf(), server.local_addr()).unwrap();
         // receive Acc
         let acc_packet: AccPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
@@ -201,7 +201,8 @@ mod tests {
         client_socket.send_to(
             &ReqPacket::new_buf(
                 MAX_PACKET_SIZE,
-                "hello.txt"
+                "hello.txt",
+                0
             ).buf(),
             server.local_addr()
         ).unwrap();

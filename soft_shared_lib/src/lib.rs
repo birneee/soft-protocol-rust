@@ -6,6 +6,7 @@ pub mod field_types;
 pub mod times;
 pub mod helper;
 pub mod general;
+pub mod checksum;
 
 #[macro_use]
 extern crate num_derive;
