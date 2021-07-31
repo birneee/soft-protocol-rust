@@ -1,4 +1,5 @@
 use atomic::Atomic;
+use soft_shared_lib::field_types::Checksum;
 use std::net::UdpSocket;
 
 pub struct ClientState {
@@ -9,6 +10,7 @@ pub struct ClientState {
     pub socket: UdpSocket,
     pub connection_id: Atomic<u32>,
     pub sequence_nr: Atomic<u64>,
+    pub checksum: Atomic<Checksum>,
     pub filesize: Atomic<u64>
 }
 
@@ -20,6 +22,7 @@ impl ClientState {
             socket,
             connection_id: Atomic::new(32),
             sequence_nr: Atomic::new(0),
+            checksum: Atomic::new([0; 32]),
             filesize: Atomic::new(0)
         }
     }
@@ -27,9 +30,11 @@ impl ClientState {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ClientStateType {
+    Starting,
+    Handshaking,
+    Downloading,
+    Validating,
     Stopping,
     Stopped,
-    Downloading,
-    Handshaking,
     Error,
 }
