@@ -1,12 +1,13 @@
 use clap::{Arg, App};
 use log::{LevelFilter, info};
+use pbr::ProgressBar;
 use soft_client_lib::client::Client;
 use soft_client_lib::client_state::ClientStateType::{*, self};
+use std::io::Stdout;
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 use soft_client_lib::client_state::ClientStateType::Downloading;
-
-use indicatif::{ProgressBar, ProgressStyle};
 
 fn main() {
     let matches = App::new("SOFT Protocol Client CLI")
@@ -55,7 +56,7 @@ fn main() {
 
     let host = matches.value_of("host").unwrap().parse().expect("invalid IP address");
     let port = matches.value_of("port").unwrap().parse().expect("invalid port");
-    let filename = matches.value_of("file").unwrap().parse().unwrap();
+    let filename: String = matches.value_of("file").unwrap().parse().unwrap();
 
     if matches.is_present("verbose") {
         env_logger::builder().filter_level(LevelFilter::Debug).init();
@@ -64,7 +65,10 @@ fn main() {
     }
 
     info!("Starting SOFT protocol client");
-    let client = Arc::new(Client::init(port, host, filename));
+    let client = Arc::new(Client::init(port, host, filename.clone()));
+    if client.state() == ClientStateType::Downloaded {
+        return;
+    }
     let client_subthread = Arc::clone(&client);
 
     let handle = thread::spawn(move || {
@@ -73,67 +77,73 @@ fn main() {
         client.run();
     });
 
-    let handshake_pb = ProgressBar::new_spinner();
+    let mut current_state: ClientStateType = Preparing;
+    let mut stopped = false;
 
-    let mut current_state: ClientStateType = Starting;
+    let mut pb = setup_progress_bar(client.get_offset());
     //TODO: We can do stuff here (note that this thread should not write to the client from now on but only read state information)
     //TODO: Refine timing of status messages (currently is set to a status message every 1 second)
     loop {
         match client.state() {
+            Preparing => {},
             Handshaking => {
                 // This handles the state changes alone.
-                if current_state == Starting {
+                if current_state == Preparing {
+                    pb.message(format!("{} -> Handshaking: ", &filename).as_str());
                     current_state = Handshaking;
-                    handshake_pb.enable_steady_tick(80);
-                    handshake_pb.set_style(
-                        ProgressStyle::default_spinner()
-                            .tick_strings(&[
-                                "⣾",
-                                "⣽",
-                                "⣻",
-                                "⢿",
-                                "⡿",
-                                "⣟",
-                                "⣯",
-                                "⣷"
-                            ])
-                            .template("{spinner:.blue} {msg}"),
-                    );
-                    handshake_pb.set_message("Handshaking...");
                 }
+                pb.tick();
             }
             Downloading => {
                 if current_state == Handshaking {
-                    handshake_pb.finish_and_clear();
+                    pb.message(format!("{} -> Downloading: ", &filename).as_str());
                     current_state = Downloading;
                 }
-                let _percentage = client.progress();
-                todo!("Build progress bar from percentage");
+                let percentage = client.progress();
+                pb.set((percentage * 100.00) as u64);
+                pb.tick();
+                //todo!("Build progress bar from percentage");
                 //println!("Downloading {}", (percentage * 100.0) as u64);
             },
             Validating => {
                 if current_state == Downloading {
-                    // Validating takes time, use a progress bar.
+                    pb.message(format!("{} -> Validating: ", &filename).as_str());
                     current_state = Validating;
                 }
+                pb.tick();
+                pb.set(100);
             },
-            Stopping => {
-                if current_state == Validating {
-                    current_state = Stopping
-                }
+            Downloaded => {
+                stopped = true;
+                pb.finish_println("done\n");
             },
             Stopped => {
-                println!("stopped");
-                break;
+                stopped = true;
+                pb.finish()
             }
             Error => {
-                println!("an error has occured");
-                break;
+                stopped = true;
+                pb.finish()
             }
-            Starting => todo!(),
+        }
+        if stopped {
+            break;
         }
     }
-
     handle.join().unwrap();
-    println!("done");
+}
+
+fn setup_progress_bar(offset: u64) -> ProgressBar<Stdout> {
+    let mut pb = ProgressBar::new(100);
+    pb.tick_format("\\|/-");
+    pb.format("|#--|");
+    pb.show_tick = true;
+    pb.show_speed = false;
+    pb.show_percent = true;
+    pb.show_counter = false;
+    pb.show_time_left = false;
+    pb.set_max_refresh_rate(Some(Duration::from_millis(60)));
+    pb.set(offset);
+
+    pb
 }
