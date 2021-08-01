@@ -51,6 +51,7 @@ impl Client {
             if let Some(_) = checksum {
                 log::debug!("Checksum file found for {}, resuming download.", &filename);
                 download_buffer = OpenOptions::new()
+                    .read(true)
                     .open(&filename)
                     .expect(format!("File download currupted: {}", &filename).as_str());
                 let metadata = download_buffer.metadata().expect("file error occoured");
