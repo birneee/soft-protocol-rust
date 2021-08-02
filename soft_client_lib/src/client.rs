@@ -1,5 +1,5 @@
 use crate::client_state::{ClientState, ClientStateType};
-use log::{info};
+use log::info;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use soft_shared_lib::field_types::{Checksum, Offset};
 use soft_shared_lib::helper::sha256_helper::{generate_checksum, sha256_to_hex_string};
@@ -32,24 +32,26 @@ pub struct Client {
 
 impl Client {
     pub fn init(port: u16, ip: IpAddr, filename: String) -> Client {
+        // TODO: move socket init outside Client.
         let address = SocketAddr::new(ip, port);
         let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
-        socket.set_read_timeout(Some(Duration::new(3, 0))).expect("Unable to set read timeout for socket");
+        socket.set_read_timeout(Some(Duration::from_secs(10))).expect("Unable to set read timeout for socket");
         let state = Arc::new(ClientState::new(socket));
         let download_buffer: File;
         let mut offset: Offset = 0;
         let checksum: Option<Checksum>;
 
-        log::info!("creating client with {} to get file {}", address, filename);
+        log::info!("Creating client with {} to get file {}", address, filename);
+        state.state_type.store(ClientStateType::Preparing, SeqCst);
 
         if Path::new(&filename).exists() {
             log::info!("File exists: {}", &filename);
             checksum = Client::get_checksum(&filename);
 
             if let Some(_) = checksum {
+                log::debug!("Checksum file found for {}, resuming download.", &filename);
                 download_buffer = OpenOptions::new()
                     .read(true)
-                    .append(true)
                     .open(&filename)
                     .expect(format!("File download currupted: {}", &filename).as_str());
                 let metadata = download_buffer.metadata().expect("file error occoured");
@@ -57,9 +59,9 @@ impl Client {
                 // Set the progress to the offset
                 state.progress.store(offset, SeqCst);
             } else {
-                log::info!("File already present");
+                log::error!("File already present");
                 // Preemptively exits out of each client operation
-                state.state_type.store(ClientStateType::Stopped, SeqCst);
+                state.state_type.store(ClientStateType::Downloaded, SeqCst);
             }
         } else {
             checksum = None;
@@ -75,6 +77,9 @@ impl Client {
         }
     }
 
+    pub fn get_offset(&self) -> u64 {
+        return self.offset;
+    }
     /// read the checksum from the separate checksum file.
     /// used for download resumption.
     /// None if file does not exist
@@ -136,28 +141,19 @@ impl Client {
         //TODO: Refine download
         self.do_file_transfer();
 
-        self.clean_up_and_stop(true)
+        self.clean_up();
     }
 
-    /// Updates the client state to stopping.
     /// if the client is already stopped, exits early
     /// Deletes the checksum file from the directory.
     /// This gets called on any runtime/hard errors.
     ///
-    fn clean_up_and_stop(&self, clean_up: bool) {
-        if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
+    fn clean_up(&self) {
+        // Don't clean up if there is a error or the client is stopped
+        if self.state.state_type.load(SeqCst) == ClientStateType::Error {
             return;
         }
-
-        self.state
-            .state_type
-            .store(ClientStateType::Stopping, SeqCst);
-        if clean_up {
-            Client::clean_checksum(&self.filename);
-        }
-        self.state
-            .state_type
-            .store(ClientStateType::Stopped, SeqCst);
+        Client::clean_checksum(&self.filename);
     }
 
     fn handle_error(&self, e: &mut ErrPacket) {
@@ -165,18 +161,15 @@ impl Client {
             soft_shared_lib::soft_error_code::SoftErrorCode::Stop => todo!(),
             soft_shared_lib::soft_error_code::SoftErrorCode::Unknown => {
                 log::error!("Unknown Error Occoured, aborting");
-                self.clean_up_and_stop(false)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::FileNotFound => {
                 log::error!(
                     "File not found on the server, aborting download of {}",
                     self.filename
                 );
-                self.clean_up_and_stop(false)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::ChecksumNotReady => {
                 log::error!("Checksum Not Ready, aborting download of {}", self.filename);
-                self.clean_up_and_stop(false)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::InvalidOffset => {
                 log::error!(
@@ -184,35 +177,36 @@ impl Client {
                             aborting download of {}",
                     self.filename
                 );
-                self.clean_up_and_stop(false)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::UnsupportedVersion => {
                 log::error!(
                     "Client running a unsupported version, aborting download of {}",
                     self.filename
                 );
-                self.clean_up_and_stop(false)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::FileChanged => {
                 log::error!("File Changed, aborting download of {}", self.filename);
-                self.clean_up_and_stop(true)
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::BadPacket => {
                 log::error!("Bad packet found, aborting download of {}", self.filename);
-                self.clean_up_and_stop(false)
             }
         }
+        self.state.state_type.store(ClientStateType::Error, SeqCst);
     }
 
     fn make_handshake(&self) {
-        if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
+        if self.state.state_type.load(SeqCst) == ClientStateType::Stopped
+            || self.state.state_type.load(SeqCst) == ClientStateType::Error
+        {
             return;
         }
 
         let mut recv_buf = [0; MAX_PACKET_SIZE];
         let mut send_buf: PacketBuf;
 
-        self.state.state_type.store(ClientStateType::Handshaking, SeqCst);
+        self.state
+            .state_type
+            .store(ClientStateType::Handshaking, SeqCst);
 
         send_buf = PacketBuf::Req(ReqPacket::new_buf(
             MAX_PACKET_SIZE as u16,
@@ -238,16 +232,18 @@ impl Client {
                     "Server is running a unsupported version of the protocol: {}",
                     version
                 );
-                return self.clean_up_and_stop(false);
+                self.state.state_type.store(ClientStateType::Error, SeqCst);
+                return;
             }
             Ok(Acc(p)) => {
                 if let Some(checksum) = self.checksum {
                     if p.checksum() != checksum {
                         log::error!("File invalid, checksum does not match. {}", self.filename);
-                        self.clean_up_and_stop(false);
+                        self.state.state_type.store(ClientStateType::Error, SeqCst);
+                        self.clean_up();
                         return;
                     } else {
-                        log::debug!("File checksums are equal. Continuing download");
+                        log::info!("Partial file checksums are equal. Continuing download");
                     }
                 } else {
                     self.store_checksum(p.checksum());
@@ -256,6 +252,7 @@ impl Client {
                 self.state.filesize.store(p.file_size(), SeqCst);
                 self.state.checksum.store(p.checksum(), SeqCst);
 
+                log::debug!("New Connection created");
                 log::debug!("Connection ID: {}", p.connection_id());
                 log::debug!("File Size: {}", p.file_size());
                 send_buf = PacketBuf::Ack(AckPacket::new_buf(
@@ -267,6 +264,7 @@ impl Client {
                     .socket
                     .send(send_buf.buf())
                     .expect("couldn't send message");
+                log::debug!("Handshake successfully completed");
             }
             Ok(Packet::Err(error_packet)) => {
                 self.handle_error(error_packet);
@@ -278,11 +276,18 @@ impl Client {
     }
 
     fn validate_download(&self) {
+        if self.state.state_type.load(SeqCst) == ClientStateType::Stopped
+            || self.state.state_type.load(SeqCst) == ClientStateType::Error
+        {
+            return;
+        }
+
+        log::info!("Validating downloaded file checksum");
+
         self.state
             .state_type
             .store(ClientStateType::Validating, SeqCst);
 
-        log::info!("Validating downloaded file checksum");
         let file = File::open(&self.filename).expect("Unable to open file to validate download");
         let mut reader = BufReader::new(file);
         let checksum = generate_checksum(&mut reader);
@@ -291,54 +296,59 @@ impl Client {
             info!(
                 "Checksum validated {}, file downloaded",
                 sha256_to_hex_string(checksum)
-            )
+            );
+            self.state
+                .state_type
+                .store(ClientStateType::Downloaded, SeqCst);
         } else {
-            log::error!("Checksum not matching, File might have changed, redownload to get the latest version!")
+            log::error!("Checksum not matching, File might have changed, redownload to get the latest version!");
+            self.state.state_type.store(ClientStateType::Error, SeqCst);
         }
     }
 
     fn do_file_transfer(&self) {
-        if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
+        if self.state.state_type.load(SeqCst) == ClientStateType::Stopped
+            || self.state.state_type.load(SeqCst) == ClientStateType::Error
+        {
             return;
         }
 
+        self.state
+            .state_type
+            .store(ClientStateType::Downloading, SeqCst);
         log::info!("Starting download");
+
         let mut download_buffer = OpenOptions::new()
             .append(true)
             .open(&self.filename)
             .expect("Unable to create file for downloading.");
 
         let mut recv_buf = [0; MAX_PACKET_SIZE];
+        let mut progress = self.state.progress.load(SeqCst);
+        let file_size = self.state.filesize.load(SeqCst);
+        let connection_id = self.state.connection_id.load(SeqCst);
 
-        while self.state.progress.load(SeqCst) != self.state.filesize.load(SeqCst)
-            && self.state.state_type.load(SeqCst) != ClientStateType::Stopped
+        while progress != file_size
+            && self.state.state_type.load(SeqCst) == ClientStateType::Downloading
         {
             let packet_size = self.state.socket.recv(&mut recv_buf).unwrap();
             let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
-            self.state
-                .state_type
-                .store(ClientStateType::Downloading, SeqCst);
 
             match unchecked_packet {
                 Err(UnsupportedSoftVersion(_)) => {
                     eprintln!("received unsupported packet");
                 }
                 Ok(Data(p)) => {
-                    self.state
-                        .sequence_nr
-                        .store(p.sequence_number() + 1, SeqCst);
                     let _ = download_buffer.write(p.data());
                     let mut send_buf = PacketBuf::Ack(AckPacket::new_buf(
                         1,
-                        self.state.connection_id.load(SeqCst),
-                        self.state.sequence_nr.load(SeqCst),
+                        connection_id,
+                        p.sequence_number() + 1,
                     ));
                     let _ = self.state.socket.send(send_buf.buf());
 
-                    let current_progress = self.state.progress.load(SeqCst);
-                    self.state
-                        .progress
-                        .store(current_progress + p.data().len() as u64, SeqCst);
+                    progress = progress + p.data().len() as u64;
+                    self.state.progress.store(progress, SeqCst);
                 }
                 Ok(Packet::Err(e)) => self.handle_error(e),
                 _ => {}
