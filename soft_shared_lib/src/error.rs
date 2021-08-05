@@ -15,6 +15,7 @@ pub enum ErrorType {
     UnsupportedSoftVersion(Version),
     FileNotFound,
     WrongPacketType,
+    Eof,
 }
 
 impl Display for ErrorType {
@@ -42,6 +43,10 @@ impl Display for ErrorType {
             ErrorType::WrongPacketType => write!(
                 fmt,
                 "the provided packet has the wrong type"
+            ),
+            ErrorType::Eof => write!(
+                fmt,
+                "end of file reached"
             )
         }
     }
