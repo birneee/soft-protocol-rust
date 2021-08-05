@@ -332,7 +332,7 @@ impl Client {
                 Ok(Data(p)) => {
                     let _ = download_buffer.write(p.data());
                     let mut send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                        3,
+                        1,
                         connection_id,
                         p.sequence_number() + 1,
                     ));

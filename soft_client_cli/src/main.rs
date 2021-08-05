@@ -2,7 +2,6 @@ use clap::{App, Arg};
 use log::{info, LevelFilter};
 use pbr::ProgressBar;
 use soft_client_lib::client::Client;
-use soft_client_lib::client_state::ClientStateType::Downloading;
 use soft_client_lib::client_state::ClientStateType::{self, *};
 use std::io::Stdout;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
@@ -110,6 +109,8 @@ fn setup_progress_bar(offset: u64) -> ProgressBar<Stdout> {
 fn setup_udp_socket(ip: IpAddr, port: u16) -> UdpSocket {
     let address = SocketAddr::new(ip, port);
     let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
+    // Read timeout is dependant on the number of hops for the packet.
+    // From india to Germany, i need a long timeout for packets to reach me.
     socket
         .set_read_timeout(Some(Duration::from_secs(10)))
         .expect("Unable to set read timeout for socket");
