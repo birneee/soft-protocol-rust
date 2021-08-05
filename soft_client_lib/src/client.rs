@@ -11,19 +11,17 @@ use soft_shared_lib::packet::packet_buf::PacketBuf;
 use soft_shared_lib::packet::req_packet::ReqPacket;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Read, Write};
-use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::net::UdpSocket;
 use std::os::unix::prelude::MetadataExt;
 use std::path::Path;
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::Arc;
-use std::time::Duration;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 // I had to adjust the MAX PACKET SIZE by a little (-50) to transfer a large file.
 const MAX_PACKET_SIZE: usize = 2usize.pow(16) - 8 - 20 - 50;
 
 pub struct Client {
-    address: SocketAddr,
     state: Arc<ClientState>,
     filename: String,
     offset: Offset,
@@ -31,17 +29,13 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn init(port: u16, ip: IpAddr, filename: String) -> Client {
-        // TODO: move socket init outside Client.
-        let address = SocketAddr::new(ip, port);
-        let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
-        socket.set_read_timeout(Some(Duration::from_secs(10))).expect("Unable to set read timeout for socket");
+    pub fn init(socket: UdpSocket, filename: String) -> Client {
         let state = Arc::new(ClientState::new(socket));
         let download_buffer: File;
         let mut offset: Offset = 0;
         let checksum: Option<Checksum>;
 
-        log::info!("Creating client with {} to get file {}", address, filename);
+        log::info!("Creating client to get file {}", filename);
         state.state_type.store(ClientStateType::Preparing, SeqCst);
 
         if Path::new(&filename).exists() {
@@ -69,7 +63,6 @@ impl Client {
         }
 
         Client {
-            address,
             state,
             filename,
             offset,
@@ -131,15 +124,12 @@ impl Client {
             return;
         }
 
-        self.state
-            .socket
-            .connect(self.address)
-            .expect("connection failed");
-
         self.make_handshake();
 
         //TODO: Refine download
         self.do_file_transfer();
+
+        self.validate_download();
 
         self.clean_up();
     }
@@ -255,6 +245,7 @@ impl Client {
                 log::debug!("New Connection created");
                 log::debug!("Connection ID: {}", p.connection_id());
                 log::debug!("File Size: {}", p.file_size());
+                log::debug!("Checksum: {}", sha256_to_hex_string(p.checksum()));
                 send_buf = PacketBuf::Ack(AckPacket::new_buf(
                     1,
                     self.state.connection_id.load(SeqCst),
@@ -341,7 +332,7 @@ impl Client {
                 Ok(Data(p)) => {
                     let _ = download_buffer.write(p.data());
                     let mut send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                        1,
+                        3,
                         connection_id,
                         p.sequence_number() + 1,
                     ));
@@ -354,8 +345,6 @@ impl Client {
                 _ => {}
             }
         }
-
-        self.validate_download();
         return;
     }
 
