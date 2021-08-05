@@ -7,6 +7,8 @@ use crate::packet::unchecked_packet::UncheckedPacket;
 use crate::packet::general_packet::GeneralPacket;
 use crate::general::byte_view::ByteView;
 use crate::error::Result;
+use crate::packet::packet_buf::DataPacketBuf;
+use std::convert::TryInto;
 
 #[repr(transparent)]
 pub struct DataPacket {
@@ -31,7 +33,7 @@ impl DataPacket {
         return size;
     }
 
-    pub fn new_buf(connection_id: ConnectionId, sequence_number: SequenceNumber, data: &[u8]) -> Vec<u8> {
+    pub fn new_buf(connection_id: ConnectionId, sequence_number: SequenceNumber, data: &[u8]) -> DataPacketBuf {
         let mut buf = vec![0u8; Self::get_required_buffer_size(data.len())];
         let unchecked = UncheckedPacket::from_buf_mut(buf.as_mut_slice());
         unchecked.set_version(SOFT_PROTOCOL_VERSION);
@@ -39,7 +41,7 @@ impl DataPacket {
         unchecked.set_connection_id(connection_id);
         unchecked.set_sequence_number(sequence_number);
         unchecked.set_data(data);
-        return buf;
+        buf.try_into().unwrap()
     }
 
     pub fn connection_id(&self) -> ConnectionId {
