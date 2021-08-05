@@ -177,7 +177,7 @@ mod tests {
         const SOFT_VERSION: u8 = 1;
         const RECEIVE_TIMEOUT: Duration = Duration::from_millis(1000);
 
-        //let _ = env_logger::builder().filter_level(LevelFilter::Debug).try_init();
+        //let _ = env_logger::builder().filter_level(log::LevelFilter::Debug).try_init();
 
         let served_dir = TempDir::new("soft_test").unwrap();
         let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
@@ -326,8 +326,7 @@ mod tests {
         const FILE_NAME: &str = "hello.txt";
         const FILE_CONTENT: &str = "hello world";
         const MAX_PACKET_SIZE: MaxPacketSize = 100; // content fit in one packet
-        //TODO reduce
-        const RECEIVE_TIMEOUT: Duration = Duration::from_millis(10000);
+        const RECEIVE_TIMEOUT: Duration = Duration::from_millis(100);
 
         //let _ = env_logger::builder().filter_level(log::LevelFilter::Debug).try_init();
 
