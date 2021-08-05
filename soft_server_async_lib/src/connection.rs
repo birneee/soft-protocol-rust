@@ -208,11 +208,11 @@ impl Connection {
                 debug!("connection {} migrated to {}", self.connection_id, src_addr);
             }
         }
-        let next_sequence_number = ack.next_sequence_number();
+        let ack_next_sequence_number = ack.next_sequence_number();
         let expected_forward_acks = self.expected_forward_acks().await;
-        match compare_range(&expected_forward_acks, next_sequence_number) {
+        match compare_range(&expected_forward_acks, ack_next_sequence_number) {
             RangeCompare::LOWER => {
-                if next_sequence_number == *(self.last_forward_acknowledgement.lock().await) as SequenceNumber {
+                if ack_next_sequence_number == *(self.last_forward_acknowledgement.lock().await) as SequenceNumber {
                     // duplicate ack
                     if Instant::now() > *self.packet_loss_timeout.lock().await {
                         // handle packet lost
@@ -227,10 +227,18 @@ impl Connection {
             RangeCompare::CONTAINED => {
                 // normal sequential ack
                 *self.client_receive_window.lock().await = ack.receive_window();
-                *self.last_forward_acknowledgement.lock().await = next_sequence_number as i128;
-                self.data_send_buffer.lock().await.drop_before(next_sequence_number);
-                if next_sequence_number != 0 {
+                *self.last_forward_acknowledgement.lock().await = ack_next_sequence_number as i128;
+                self.data_send_buffer.lock().await.drop_before(ack_next_sequence_number);
+                if ack_next_sequence_number != 0 {
                     self.increase_congestion_window().await;
+                }
+                let data_send_instant_sample = self.data_send_instant_sample.lock().await;
+                if ack_next_sequence_number as i128 > (*data_send_instant_sample).0 {
+                    // update rtt
+                    let now = Instant::now();
+                    let rtt_sample = now - (*data_send_instant_sample).1;
+                    debug!("measured {:?} rtt for connection {}", rtt_sample, self.connection_id);
+                    self.apply_rtt_sample(rtt_sample).await;
                 }
             }
             RangeCompare::HIGHER => {
@@ -275,6 +283,10 @@ impl Connection {
                         *self.last_packet_sent.lock().await = sequence_number as i128;
                     }
                 }
+            }
+            let mut data_send_instant_sample = self.data_send_instant_sample.lock().await;
+            if self.last_packet_acknowledged().await >= (*data_send_instant_sample).0 {
+                *data_send_instant_sample = (sequence_number as i128, Instant::now());
             }
         }
     }
@@ -367,6 +379,10 @@ impl Connection {
         let last_packet_sent = *self.last_packet_sent.lock().await;
         let last_packet_acknowledged = self.last_packet_acknowledged().await;
         return (max_window - (last_packet_sent - last_packet_acknowledged)) as u16
+    }
+
+    async fn apply_rtt_sample(&self, rtt_sample: Duration) {
+        self.congestion_cache.apply_rtt_sample(*self.client_addr.lock().await, rtt_sample);
     }
 
     /// true if connection is no longer active
