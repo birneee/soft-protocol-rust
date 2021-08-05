@@ -198,7 +198,6 @@ impl Connection {
     }
 
     async fn handle_ack(&self, ack: &AckPacket, src_addr: SocketAddr) {
-        //TODO update RTT
         self.reset_connection_timeout().await;
         {
             let mut client_addr = self.client_addr.lock().await;
