@@ -98,7 +98,7 @@ impl Connection {
                 Err(e) => {
                     let err = ErrPacket::new_buf(FileNotFound, 0);
                     self.socket.send_to(err.buf(), src_addr).await?;
-                    debug!("sent {}", &err);
+                    debug!("sent {} to {}", &err, src_addr);
                     return Err(e);
                 }
             };
@@ -106,7 +106,7 @@ impl Connection {
             if req.offset() >= file_size {
                 let err = ErrPacket::new_buf(InvalidOffset, 0);
                 self.socket.send_to(err.buf(), src_addr).await?;
-                debug!("sent {}", &err);
+                debug!("sent {} to {}", &err, src_addr);
                 return Ok(());
             }
 
@@ -118,7 +118,7 @@ impl Connection {
                 Err(error) => {
                     let err = ErrPacket::new_buf(Unknown, 0);
                     self.socket.send_to(err.buf(), src_addr).await?;
-                    debug!("sent {}", &err);
+                    debug!("sent {} to {}", &err, src_addr);
                     return Err(error);
                 }
             };
@@ -127,7 +127,7 @@ impl Connection {
             if let std::io::Result::Err(e) = reader.seek(SeekFrom::Start(req.offset())).await {
                 let err = ErrPacket::new_buf(Unknown, 0);
                 self.socket.send_to(err.buf(), src_addr).await?;
-                debug!("sent {}", &err);
+                debug!("sent {} to {}", &err, src_addr);
                 return Err(IOError(e));
             }
 
@@ -136,7 +136,7 @@ impl Connection {
             debug!("new connection {{ connection_id: {}, src_addr: {} }}", self.connection_id, src_addr);
             let acc = AccPacket::new_buf(self.connection_id, file_size, checksum);
             self.socket.send_to(acc.buf(), src_addr).await?;
-            debug!("sent {}", &acc);
+            debug!("sent {} to {}", &acc, src_addr);
 
             loop {
                 match packet_receiver.recv().await.unwrap() {
@@ -198,7 +198,6 @@ impl Connection {
 
     /// send data packets until the effective window is 0 again
     async fn send_data(&self) {
-        debug!("effective window {}", self.effective_window().await);
         while self.effective_window().await > 0 {
             let sequence_number = (*self.last_packet_sent.lock().await + 1) as SequenceNumber;
             let mut data_send_buffer = self.data_send_buffer.lock().await;
