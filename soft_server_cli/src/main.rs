@@ -1,5 +1,5 @@
 use clap::{Arg, App};
-use soft_server_lib::server::Server;
+use soft_server_async_lib::server::Server;
 use std::path::PathBuf;
 use std::convert::TryFrom;
 use log::{LevelFilter, info};
@@ -7,6 +7,7 @@ use signal_hook::iterator::Signals;
 use signal_hook::consts::SIGINT;
 use std::thread::sleep;
 use std::time::Duration;
+use std::net::{Ipv4Addr, SocketAddrV4};
 
 static DEFAULT_ARG_SERVED_DIR: &str = "./public";
 
@@ -52,7 +53,7 @@ fn main() {
         env_logger::builder().filter_level(LevelFilter::Info).init();
     }
 
-    let server = Server::start_with_port(port, served_dir.clone());
+    let server = Server::start(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port), served_dir.clone());
 
     info!("Press Ctrl-C to stop server...");
     wait_for_ctrl_c();

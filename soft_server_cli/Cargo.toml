@@ -5,7 +5,7 @@ edition = "2018"
 
 [dependencies]
 soft_shared_lib = { path = "../soft_shared_lib" }
-soft_server_lib = { path = "../soft_server_lib" }
+soft_server_async_lib = { path = "../soft_server_async_lib" }
 clap = "2.33.3"
 log = "0.4.14"
 env_logger = "0.9.0"
