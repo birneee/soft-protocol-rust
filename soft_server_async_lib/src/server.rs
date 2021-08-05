@@ -72,7 +72,7 @@ impl Server {
                 let (size, src_addr) = socket.recv_from(&mut receive_buffer).await.unwrap();
                 receive_buffer.truncate(size);
                 let packet = PacketBuf::new(receive_buffer).unwrap();
-                debug!("received {}", packet);
+                debug!("received {} from {}", packet, src_addr);
                 //TODO reset ttlcache
                 match &packet {
                     PacketBuf::Req(req) => {
@@ -222,8 +222,7 @@ mod tests {
             if data_packet.sequence_number() == 0 {
                 assert_eq!(server.max_window_of(connection_id).unwrap(), 1);
             } else {
-                //TODO fix implementation
-                //assert!(server.max_window_of(connection_id).unwrap() > 1);
+                assert!(server.max_window_of(connection_id).unwrap() > 1);
             }
             received_file_content.write(data_packet.data()).unwrap();
             expected_sequence_number += 1;
