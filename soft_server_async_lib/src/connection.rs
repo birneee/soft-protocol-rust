@@ -36,6 +36,13 @@ use std::io::Write;
 
 const PACKET_CHANNEL_SIZE: usize = 10;
 
+/// like normal SequenceNumber
+///
+/// this type simplifies calculations
+///
+/// meaningful negative values are used as initial values
+type InternalSequenceNumber = i128;
+
 pub struct Connection {
     pub connection_id: ConnectionId,
     pub socket: Arc<UdpSocket>,
@@ -46,15 +53,21 @@ pub struct Connection {
     connection_timeout: Mutex<Instant>,
     client_addr: Mutex<SocketAddr>,
     /// -1 if no ACK packet has been received yet
-    last_forward_acknowledgement: Mutex<i128>,
+    last_forward_acknowledgement: Mutex<InternalSequenceNumber>,
     /// -1 if no Data packet has been sent yet
-    last_packet_sent: Mutex<i128>,
+    last_packet_sent: Mutex<InternalSequenceNumber>,
     packet_loss_timeout: Mutex<Instant>,
     client_receive_window: Mutex<ReceiveWindow>,
     data_send_buffer: Mutex<SendBuffer>,
     /// None in the beginning, Some after the handshake
     reader: Mutex<Option<BufReader<File>>>,
     max_packet_size: MaxPacketSize,
+    /// The instant when a data packet is sent
+    ///
+    /// these samples are used to calculate the rtt
+    ///
+    /// SequenceNumber -1 is the instant when the ACC packet is sent
+    data_send_instant_sample: Mutex<(InternalSequenceNumber, Instant)>,
 }
 
 impl Connection {
@@ -78,6 +91,7 @@ impl Connection {
             data_send_buffer: Mutex::new(SendBuffer::new()),
             reader: Mutex::new(None),
             max_packet_size,
+            data_send_instant_sample: Mutex::new((-1, Instant::now())) //TODO set at ACC send instant
         });
 
         connection.clone().spawn(packet_receiver);
@@ -139,23 +153,52 @@ impl Connection {
             debug!("sent {} to {}", &acc, src_addr);
 
             loop {
-                match packet_receiver.recv().await.unwrap() {
-                    (PacketBuf::Ack(ack), src_addr) => {
-                        self.handle_ack(ack.deref(), src_addr).await;
-                        if self.transfer_finished().await {
-                            return Ok(());
+                match tokio::time::timeout(times::data_packet_retransmission_timeout(self.rtt().await), packet_receiver.recv()).await {
+                    Ok(packet) => {
+                        match packet {
+                            Some((PacketBuf::Ack(ack), src_addr)) => {
+                                self.handle_ack(ack.deref(), src_addr).await;
+                                if self.transfer_finished().await {
+                                    debug!("transfer finished, close connection {}", self.connection_id);
+                                    break;
+                                }
+                            },
+                            Some((PacketBuf::Err(_), _)) => {
+                                debug!("close connection {}", self.connection_id);
+                                break;
+                            },
+                            Some((_,_)) => {
+                                debug!("unexpected packet, close connection {}", self.connection_id);
+                            }
+                            None => {
+                                // packet_receiver channel has been closed
+                                debug!("close connection {}", self.connection_id);
+                                break;
+                            }
                         }
-                        self.send_data().await;
-                    },
-                    _ => {
-                        todo!()
+                    }
+                    Err(_) => {
+                        // timeout
+                        if Instant::now() > *self.connection_timeout.lock().await {
+                            // connection timeout
+                            debug!("connection timeout, close connection {}", self.connection_id);
+                            break;
+                        } else {
+                            // retransmission timout
+                            debug!("retransmission timeout on connection {}", self.connection_id);
+                            // reduce in flight packets to trigger retransmission
+                            *self.last_packet_sent.lock().await = min(self.last_packet_acknowledged().await, -1);
+                        }
                     }
                 };
+                self.send_data().await;
             }
+            return Ok(());
         })
     }
 
     async fn handle_ack(&self, ack: &AckPacket, src_addr: SocketAddr) {
+        //TODO update RTT
         self.reset_connection_timeout().await;
         {
             let mut client_addr = self.client_addr.lock().await;
