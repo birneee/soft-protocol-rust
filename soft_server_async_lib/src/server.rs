@@ -320,4 +320,74 @@ mod tests {
         // stop server
         drop(server);
     }
+
+    #[test]
+    fn retransmission(){
+        const FILE_NAME: &str = "hello.txt";
+        const FILE_CONTENT: &str = "hello world";
+        const MAX_PACKET_SIZE: MaxPacketSize = 100; // content fit in one packet
+        //TODO reduce
+        const RECEIVE_TIMEOUT: Duration = Duration::from_millis(10000);
+
+        //let _ = env_logger::builder().filter_level(log::LevelFilter::Debug).try_init();
+
+        // start server
+        let served_dir = TempDir::new("soft_test").unwrap();
+        let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
+        file.write(FILE_CONTENT.as_bytes()).unwrap();
+        let server = Server::start("127.0.0.1:0", served_dir.into_path());
+
+        let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
+        let mut received_file_content = Vec::<u8>::with_capacity(FILE_CONTENT.len());
+
+        // send Req
+        client_socket.send_to(
+            &ReqPacket::new_buf(
+                MAX_PACKET_SIZE,
+                "hello.txt",
+                0
+            ).buf(),
+            server.local_addr()
+        ).unwrap();
+
+        // receive Acc
+        let acc_packet: AccPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
+        let connection_id = acc_packet.connection_id();
+        drop(acc_packet);
+
+        // send Ack 0
+        client_socket.send_to(
+            &AckPacket::new_buf(
+                10,
+                connection_id,
+                0
+            ).buf(),
+            server.local_addr()
+        ).unwrap();
+
+        // receive Data 0
+        let data_packet1 : DataPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
+
+        // receive Data 0 again
+        let data_packet2 : DataPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
+        assert_eq!(data_packet1.buf(), data_packet2.buf());
+        received_file_content.write(data_packet2.data()).unwrap();
+
+        // send Ack 1
+        client_socket.send_to(
+            &AckPacket::new_buf(
+                10,
+                connection_id,
+                1
+            ).buf(),
+            server.local_addr()
+        ).unwrap();
+
+        // validate content
+        assert_eq!(std::str::from_utf8(&received_file_content).unwrap(), FILE_CONTENT);
+
+        // stop server
+        drop(server);
+    }
 }
