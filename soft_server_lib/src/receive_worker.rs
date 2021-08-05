@@ -191,7 +191,7 @@ impl ReceiveWorker {
                     if let Ok(packet) = &packet{
                         debug!("received {}", packet);
                     }
-                    if let Some(mut packet) = Self::handle_packet(&state, &packet, &src) {
+                    if let Some(packet) = Self::handle_packet(&state, &packet, &src) {
                         state
                             .socket
                             .send_to(packet.buf(), src)
