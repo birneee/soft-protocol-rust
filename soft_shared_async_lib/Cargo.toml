@@ -5,3 +5,5 @@ edition = "2018"
 
 [dependencies]
 soft_shared_lib = { path = "../soft_shared_lib" }
+tokio = { version = "1.9.0", features = ["full"] }
+sha2 = "0.9.5"
