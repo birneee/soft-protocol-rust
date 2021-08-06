@@ -16,6 +16,7 @@ pub enum ErrorType {
     FileNotFound,
     WrongPacketType,
     Eof,
+    InvalidRequest,
 }
 
 impl Display for ErrorType {
@@ -47,6 +48,10 @@ impl Display for ErrorType {
             ErrorType::Eof => write!(
                 fmt,
                 "end of file reached"
+            ),
+            ErrorType::InvalidRequest => write!(
+                fmt,
+                "invalid request"
             )
         }
     }
