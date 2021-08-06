@@ -5,7 +5,7 @@ use std::time::Duration;
 use soft_shared_lib::constants::SOFT_MAX_PACKET_SIZE;
 use soft_shared_lib::packet::packet_buf::PacketBuf;
 use ttl_cache::TtlCache;
-use soft_shared_lib::field_types::{ConnectionId, MaxPacketSize};
+use soft_shared_lib::field_types::{ConnectionId};
 use crate::connection::Connection;
 use tokio::sync::Mutex;
 use std::sync::{Arc};
@@ -18,7 +18,7 @@ use crate::checksum_cache::ChecksumCache;
 use crate::congestion_cache::CongestionCache;
 use core::mem;
 use tokio::task::JoinHandle;
-use std::cmp::min;
+use std::ops::Deref;
 
 pub const MAX_SIMULTANEOUS_CONNECTIONS: usize = 100;
 pub const FILE_READER_BUFFER_SIZE: usize = 2usize.pow(16);
@@ -73,24 +73,27 @@ impl Server {
                 receive_buffer.truncate(size);
                 let packet = PacketBuf::new(receive_buffer).unwrap();
                 debug!("received {} from {}", packet, src_addr);
-                //TODO reset ttlcache
                 match &packet {
                     PacketBuf::Req(req) => {
                         let mut connections = connections.lock().await;
                         let connection_id = Self::generate_connection_id(&connections);
-                        let connection = Connection::new(
-                            connection_id,
-                            src_addr,
-                            socket.clone(),
-                            congestion_cache.clone(),
-                            checksum_cache.clone(),
-                            file_sandbox.clone(),
-                            min(req.max_packet_size(), SOFT_MAX_PACKET_SIZE as MaxPacketSize),
-                        );
-                        let _ = connection.packet_sender.send((packet, src_addr)).await;
-                        connections.insert(connection_id, connection, connection_timeout());
+                        {
+                            let connection = Connection::new(
+                                connection_id,
+                                req.deref(),
+                                src_addr,
+                                socket.clone(),
+                                congestion_cache.clone(),
+                                &checksum_cache,
+                                &file_sandbox,
+                            ).await;
+                            if let Ok(connection) = connection {
+                                connections.insert(connection_id, connection, connection_timeout());
+                            }
+                        }
                     }
                     _ => {
+                        //TODO reset ttlcache
                         let connection_id = packet.connection_id_or_none().unwrap();
                         let connections = connections.lock().await;
                         if let Some(connection) = connections.get(&connection_id) {

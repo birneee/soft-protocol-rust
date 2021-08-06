@@ -33,6 +33,8 @@ use std::cmp::min;
 use soft_shared_lib::packet::data_packet::DataPacket;
 use soft_shared_lib::packet::packet::Packet;
 use std::io::Write;
+use soft_shared_lib::packet::req_packet::ReqPacket;
+use soft_shared_lib::constants::SOFT_MAX_PACKET_SIZE;
 
 const PACKET_CHANNEL_SIZE: usize = 10;
 
@@ -48,8 +50,6 @@ pub struct Connection {
     pub socket: Arc<UdpSocket>,
     pub packet_sender: Sender<(PacketBuf, SocketAddr)>,
     congestion_cache: Arc<CongestionCache>,
-    checksum_cache: Arc<ChecksumCache>,
-    file_sandbox: Arc<FileSandbox>,
     connection_timeout: Mutex<Instant>,
     client_addr: Mutex<SocketAddr>,
     /// -1 if no ACK packet has been received yet
@@ -60,7 +60,7 @@ pub struct Connection {
     client_receive_window: Mutex<ReceiveWindow>,
     data_send_buffer: Mutex<SendBuffer>,
     /// None in the beginning, Some after the handshake
-    reader: Mutex<Option<BufReader<File>>>,
+    reader: Mutex<BufReader<File>>,
     max_packet_size: MaxPacketSize,
     /// The instant when a data packet is sent
     ///
@@ -72,86 +72,86 @@ pub struct Connection {
 
 impl Connection {
 
-    pub fn new(connection_id: ConnectionId, client_addr: SocketAddr, socket: Arc<UdpSocket>, congestion_cache: Arc<CongestionCache>, checksum_cache: Arc<ChecksumCache>, file_sandbox: Arc<FileSandbox>, max_packet_size: MaxPacketSize) -> Arc<Connection>{
+    /// create new connection
+    ///
+    /// a connection instance handles the complete file transfer logic with one client
+    ///
+    /// received packets have to be passed to the packet_sender channel
+    ///
+    /// fails if request is invalid or file is not found
+    pub async fn new(connection_id: ConnectionId, req: &ReqPacket, src_addr: SocketAddr, socket: Arc<UdpSocket>, congestion_cache: Arc<CongestionCache>, checksum_cache: &ChecksumCache, file_sandbox: &FileSandbox) -> error::Result<Arc<Connection>> {
         let (packet_sender, packet_receiver) = tokio::sync::mpsc::channel(PACKET_CHANNEL_SIZE);
+
+        let file = match file_sandbox.get_file(req.file_name()).await {
+            Ok(file) => file,
+            Err(e) => {
+                let err = ErrPacket::new_buf(FileNotFound, 0);
+                socket.send_to(err.buf(), src_addr).await?;
+                debug!("sent {} to {}", &err, src_addr);
+                return Err(e);
+            }
+        };
+
+        let file_size = file.metadata().await?.len();
+        if req.offset() >= file_size {
+            let err = ErrPacket::new_buf(InvalidOffset, 0);
+            socket.send_to(err.buf(), src_addr).await?;
+            debug!("sent {} to {}", &err, src_addr);
+            return Err(ErrorType::InvalidRequest);
+        }
+
+        let mut reader = BufReader::with_capacity(FILE_READER_BUFFER_SIZE, file);
+
+        let checksum = match checksum_cache.get_checksum(req.file_name(), &mut reader).await
+        {
+            Ok(checksum) => checksum,
+            Err(error) => {
+                let err = ErrPacket::new_buf(Unknown, 0);
+                socket.send_to(err.buf(), src_addr).await?;
+                debug!("sent {} to {}", &err, src_addr);
+                return Err(error);
+            }
+        };
+
+        // set file pointer to offset
+        if let std::io::Result::Err(e) = reader.seek(SeekFrom::Start(req.offset())).await {
+            let err = ErrPacket::new_buf(Unknown, 0);
+            socket.send_to(err.buf(), src_addr).await?;
+            debug!("sent {} to {}", &err, src_addr);
+            return Err(IOError(e));
+        }
+
+        debug!("new connection {{ connection_id: {}, src_addr: {} }}", connection_id, src_addr);
+        let acc = AccPacket::new_buf(connection_id, file_size, checksum);
+        socket.send_to(acc.buf(), src_addr).await?;
+        debug!("sent {} to {}", &acc, src_addr);
+        let acc_send_instant = Instant::now();
 
         let connection = Arc::new(Connection {
             connection_id,
             socket,
             packet_sender,
             congestion_cache,
-            checksum_cache,
-            file_sandbox,
             connection_timeout: Mutex::new(Instant::now() + connection_timeout()),
-            client_addr: Mutex::new(client_addr),
+            client_addr: Mutex::new(src_addr),
             last_forward_acknowledgement: Mutex::new(-1),
             last_packet_sent: Mutex::new(-1),
             packet_loss_timeout: Mutex::new(Instant::now()),
             client_receive_window: Mutex::new(0),
             data_send_buffer: Mutex::new(SendBuffer::new()),
-            reader: Mutex::new(None),
-            max_packet_size,
-            data_send_instant_sample: Mutex::new((-1, Instant::now())) //TODO set at ACC send instant
+            reader: Mutex::new(reader),
+            max_packet_size: min(req.max_packet_size(), SOFT_MAX_PACKET_SIZE as MaxPacketSize),
+            data_send_instant_sample: Mutex::new((-1, acc_send_instant)),
         });
 
         connection.clone().spawn(packet_receiver);
 
-        connection
+        return Ok(connection);
     }
 
+    /// spawn ACK DATA routine in own tokio task
     fn spawn(self: Arc<Self>, mut packet_receiver: Receiver<(PacketBuf, SocketAddr)>) -> JoinHandle<error::Result<()>> {
         tokio::spawn(async move {
-            let (req, src_addr) = if let (PacketBuf::Req(req), src_addr) = packet_receiver.recv().await.unwrap() {
-                (req, src_addr)
-            } else {
-                return Err(ErrorType::WrongPacketType);
-            };
-
-            let file = match self.file_sandbox.get_file(req.file_name()).await {
-                Ok(file) => file,
-                Err(e) => {
-                    let err = ErrPacket::new_buf(FileNotFound, 0);
-                    self.socket.send_to(err.buf(), src_addr).await?;
-                    debug!("sent {} to {}", &err, src_addr);
-                    return Err(e);
-                }
-            };
-            let file_size = file.metadata().await?.len();
-            if req.offset() >= file_size {
-                let err = ErrPacket::new_buf(InvalidOffset, 0);
-                self.socket.send_to(err.buf(), src_addr).await?;
-                debug!("sent {} to {}", &err, src_addr);
-                return Ok(());
-            }
-
-            let mut reader = BufReader::with_capacity(FILE_READER_BUFFER_SIZE, file);
-
-            let checksum = match self.checksum_cache.get_checksum(req.file_name(), &mut reader).await
-            {
-                Ok(checksum) => checksum,
-                Err(error) => {
-                    let err = ErrPacket::new_buf(Unknown, 0);
-                    self.socket.send_to(err.buf(), src_addr).await?;
-                    debug!("sent {} to {}", &err, src_addr);
-                    return Err(error);
-                }
-            };
-
-            // set file pointer to offset
-            if let std::io::Result::Err(e) = reader.seek(SeekFrom::Start(req.offset())).await {
-                let err = ErrPacket::new_buf(Unknown, 0);
-                self.socket.send_to(err.buf(), src_addr).await?;
-                debug!("sent {} to {}", &err, src_addr);
-                return Err(IOError(e));
-            }
-
-            *self.reader.lock().await = Some(reader);
-
-            debug!("new connection {{ connection_id: {}, src_addr: {} }}", self.connection_id, src_addr);
-            let acc = AccPacket::new_buf(self.connection_id, file_size, checksum);
-            self.socket.send_to(acc.buf(), src_addr).await?;
-            debug!("sent {} to {}", &acc, src_addr);
-
             loop {
                 match tokio::time::timeout(times::data_packet_retransmission_timeout(self.rtt().await), packet_receiver.recv()).await {
                     Ok(packet) => {
@@ -298,7 +298,7 @@ impl Connection {
         let max_data_size = self.max_packet_size - (DataPacket::get_required_buffer_size_without_data() as u16);
         let mut tmp_buf = vec![0u8; max_data_size as usize];
         let mut reader = self.reader.lock().await;
-        return match reader.as_mut().unwrap().read(&mut tmp_buf).await {
+        return match reader.read(&mut tmp_buf).await {
             Ok(size) if size == 0 => {
                 Err(ErrorType::Eof)
             }
@@ -359,10 +359,8 @@ impl Connection {
     ///
     /// there might still be packets in the data send buffer
     async fn eof(&self) -> bool {
-        match &mut *self.reader.lock().await {
-            None => false,
-            Some(reader) => reader.stream_position().await.unwrap() == reader.get_ref().metadata().await.unwrap().len()
-        }
+        let mut reader = self.reader.lock().await;
+        reader.stream_position().await.unwrap() == reader.get_ref().metadata().await.unwrap().len()
     }
 
     /// true if all bytes of the file are transferred and acknowledged by the client
