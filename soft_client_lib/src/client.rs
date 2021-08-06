@@ -16,16 +16,17 @@ use std::os::unix::prelude::MetadataExt;
 use std::path::Path;
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::Arc;
+use std::sync::mpsc::Sender;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 // I had to adjust the MAX PACKET SIZE by a little (-50) to transfer a large file.
-const MAX_PACKET_SIZE: usize = 2usize.pow(16) - 8 - 20 - 50;
+const MAX_PACKET_SIZE: usize = 2usize.pow(10) - 8 - 20 - 50;
 
 pub struct Client {
     state: Arc<ClientState>,
     filename: String,
     offset: Offset,
-    checksum: Option<Checksum>,
+    checksum: Option<Checksum>
 }
 
 impl Client {
@@ -119,19 +120,20 @@ impl Client {
         }
     }
 
-    pub fn run(&self) {
+    pub fn run(&self, sender: Sender<bool>) {
         if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
             return;
         }
 
         self.make_handshake();
 
-        //TODO: Refine download
         self.do_file_transfer();
 
         self.validate_download();
 
         self.clean_up();
+
+        drop(sender);
     }
 
     /// if the client is already stopped, exits early

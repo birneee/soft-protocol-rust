@@ -5,7 +5,7 @@ use soft_client_lib::client::Client;
 use soft_client_lib::client_state::ClientStateType::{self, *};
 use std::io::Stdout;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
@@ -109,8 +109,6 @@ fn setup_progress_bar(offset: u64) -> ProgressBar<Stdout> {
 fn setup_udp_socket(ip: IpAddr, port: u16) -> UdpSocket {
     let address = SocketAddr::new(ip, port);
     let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
-    // Read timeout is dependant on the number of hops for the packet.
-    // From india to Germany, i need a long timeout for packets to reach me.
     socket
         .set_read_timeout(Some(Duration::from_secs(10)))
         .expect("Unable to set read timeout for socket");
@@ -120,6 +118,7 @@ fn setup_udp_socket(ip: IpAddr, port: u16) -> UdpSocket {
 
 
 fn download_file(socket: UdpSocket, filename: &str) {
+    let (status_sender, status_reciever) = mpsc::channel::<bool>();
     let client = Arc::new(Client::init(
         socket,
         filename.to_string(),
@@ -131,14 +130,7 @@ fn download_file(socket: UdpSocket, filename: &str) {
 
     let handle = thread::spawn(move || {
         let client = client_subthread;
-
-        // TODO: Handle Exceptions gracefully, right now, if this thread panics, the main thread hat keine Idee.
-        // We can update the client status to stopped or error but that's not possible due to except() function calls
-        // When we encounter an error.
-        // One solution is to have a channel open between the worker thread and the main thread.
-        // If the thread drops the sender, that means that the thread's stopped due to a panic and
-        // we can stop listening on the updates from that thread.
-        client.run();
+        client.run(status_sender);
     });
 
     let mut current_state: ClientStateType = Preparing;
@@ -149,7 +141,6 @@ fn download_file(socket: UdpSocket, filename: &str) {
         match client.state() {
             Preparing => {}
             Handshaking => {
-                // This handles the state changes alone.
                 if current_state == Preparing {
                     pb.message(format!("{} -> Handshaking: ", &filename).as_str());
                     current_state = Handshaking;
@@ -164,8 +155,6 @@ fn download_file(socket: UdpSocket, filename: &str) {
                 let percentage = client.progress();
                 pb.set((percentage * 100.00) as u64);
                 pb.tick();
-                //todo!("Build progress bar from percentage");
-                //println!("Downloading {}", (percentage * 100.0) as u64);
             }
             Validating => {
                 if current_state == Downloading {
@@ -187,6 +176,9 @@ fn download_file(socket: UdpSocket, filename: &str) {
                 stopped = true;
                 pb.finish()
             }
+        }
+        if stopped != true && status_reciever.try_recv().err().unwrap() == mpsc::TryRecvError::Disconnected {
+            stopped = true;
         }
         if stopped {
             break;
