@@ -8,13 +8,18 @@ use crate::server::MAX_SIMULTANEOUS_CONNECTIONS;
 
 pub type CongestionWindow = u16; // same size as receive window
 
-const INITIAL_CONGESTION_WINDOW: CongestionWindow = 1;
-const RTT_MOVING_AVERAGE_GAMMA: f32 = 0.9;
+const INITIAL_CONGESTION_WINDOW: f64 = 1.0;
+const INITIAL_AVOIDANCE_THRESHOLD: f64 = f64::INFINITY;
+/// number of MPS to increase the congestion window
+const CONGESTION_ALPHA: f64 = 1.0;
+/// factor for decreasing the congestion window
+const CONGESTION_BETA: f64 = 0.5;
+const RTT_MOVING_AVERAGE_GAMMA: f64 = 0.9;
 
-// TODO remove expired entries
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct CongestionState {
-    pub congestion_window: CongestionWindow, // same size as receive window
+    pub congestion_window: f64,
+    congestion_avoidance_threshold: f64,
     current_rtt: Duration,
 }
 
@@ -22,8 +27,15 @@ impl CongestionState {
     fn initial() -> Self {
         return Self {
             congestion_window: INITIAL_CONGESTION_WINDOW,
+            congestion_avoidance_threshold: INITIAL_AVOIDANCE_THRESHOLD,
             current_rtt: INITIAL_RTT,
         };
+    }
+    /// true if slow_start
+    ///
+    /// false if congestion avoidance
+    fn is_slow_start(&self) -> bool {
+        self.congestion_window < self.congestion_avoidance_threshold
     }
 }
 
@@ -51,10 +63,10 @@ impl CongestionCache {
     /// GAMMA = 0.9
     pub fn apply_rtt_sample(&self, addr: SocketAddr, rtt_sample: Duration) {
         self.update(addr, |congestion_state| {
-            if congestion_state == &CongestionState::initial() {
+            if *congestion_state == CongestionState::initial() {
                 congestion_state.current_rtt = rtt_sample;
             } else {
-                congestion_state.current_rtt = congestion_state.current_rtt.mul_f32(RTT_MOVING_AVERAGE_GAMMA) + rtt_sample.mul_f32(1.0- RTT_MOVING_AVERAGE_GAMMA);
+                congestion_state.current_rtt = congestion_state.current_rtt.mul_f64(RTT_MOVING_AVERAGE_GAMMA) + rtt_sample.mul_f64(1.0 - RTT_MOVING_AVERAGE_GAMMA);
             }
             debug!("updated rtt of {} to {:?}", addr, congestion_state.current_rtt);
         });
@@ -62,7 +74,7 @@ impl CongestionCache {
 
     pub fn congestion_window(&self, addr: SocketAddr) -> CongestionWindow{
         let cache = self.cache.lock().unwrap();
-        cache.get(&addr).map(|s| s.congestion_window).unwrap_or(INITIAL_CONGESTION_WINDOW)
+        cache.get(&addr).map(|s| s.congestion_window).unwrap_or(INITIAL_CONGESTION_WINDOW) as CongestionWindow
     }
 
     fn update<F: Fn(&mut CongestionState)>(&self, addr: SocketAddr, f: F) {
@@ -75,22 +87,48 @@ impl CongestionCache {
 
     /// increase congestion window
     ///
+    /// should be called on received ACKs
+    ///
     /// during slow start: +1
     ///
     /// during avoidance phase: + ( 1/cwnd )
-    pub fn increase(&self, addr: SocketAddr){
+    pub fn increase_congestion_window(&self, addr: SocketAddr){
         self.update(addr, |value| {
-            value.congestion_window += 1;
-            //TODO distinguish slow start and avoidance phase
+            if value.is_slow_start() {
+                value.congestion_window += CONGESTION_ALPHA;
+                // check if it has changed
+                if !value.is_slow_start() {
+                    debug!("enter congestion avoidance phase")
+                }
+            } else {
+                value.congestion_window += 1.0 / value.congestion_window;
+            }
             debug!("updated congestion window of {} to {}", addr, value.congestion_window);
         });
     }
 
     /// halve the congestion window
-    pub fn decrease(&self, addr: SocketAddr){
+    ///
+    /// should be called on congestion loss
+    pub fn decrease_congestion_window(&self, addr: SocketAddr){
         self.update(addr, |value| {
-            value.congestion_window /= 1;
+            value.congestion_window = value.congestion_window * CONGESTION_BETA;
+            value.congestion_avoidance_threshold = value.congestion_window;
             debug!("updated congestion window of {} to {}", addr, value.congestion_window);
         });
     }
+
+    /// reset congestion window to 1
+    ///
+    /// should be called on timeouts
+    pub fn reset_congestion_window(&self, addr: SocketAddr){
+        self.update(addr, |value| {
+            value.congestion_avoidance_threshold =  value.congestion_window * CONGESTION_BETA;
+            value.congestion_window = INITIAL_CONGESTION_WINDOW;
+            debug!("enter slow start phase");
+            debug!("updated congestion window of {} to {}", addr, value.congestion_window);
+        });
+    }
+
+
 }

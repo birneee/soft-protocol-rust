@@ -186,6 +186,7 @@ impl Connection {
                         } else {
                             // retransmission timout
                             debug!("retransmission timeout on connection {}", self.connection_id);
+                            self.reset_congestion_window().await;
                             // reduce in flight packets to trigger retransmission
                             *self.last_packet_sent.lock().await = min(self.last_packet_acknowledged().await, -1);
                         }
@@ -339,11 +340,15 @@ impl Connection {
     }
 
     async fn increase_congestion_window(&self) {
-        self.congestion_cache.increase(*self.client_addr.lock().await);
+        self.congestion_cache.increase_congestion_window(*self.client_addr.lock().await);
     }
 
     async fn decrease_congestion_window(&self) {
-        self.congestion_cache.decrease(*self.client_addr.lock().await);
+        self.congestion_cache.decrease_congestion_window(*self.client_addr.lock().await);
+    }
+
+    async fn reset_congestion_window(&self) {
+        self.congestion_cache.reset_congestion_window(*self.client_addr.lock().await);
     }
 
     async fn rtt(&self) -> Duration{
