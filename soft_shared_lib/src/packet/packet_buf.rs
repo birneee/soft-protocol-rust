@@ -12,6 +12,9 @@ use crate::packet::data_packet::DataPacket;
 use crate::general::byte_view_buf::ByteViewBuf;
 use crate::packet::err_packet::ErrPacket;
 use crate::packet::ack_packet::AckPacket;
+use crate::field_types::ConnectionId;
+use crate::packet::packet::Packet;
+use crate::packet::general_packet::GeneralPacket;
 
 /// An owned UncheckedPacket
 pub type UncheckedPacketBuf = ByteViewBuf<UncheckedPacket>;
@@ -51,13 +54,38 @@ impl PacketBuf {
         })
     }
 
-    pub fn buf(&mut self) -> &mut [u8]{
+    pub fn buf(&self) -> &[u8]{
+        match self {
+            Self::Req(p) => { p.buf() }
+            Self::Acc(p) => { p.buf() }
+            Self::Data(p) => { p.buf() }
+            Self::Ack(p) => { p.buf() }
+            Self::Err(p) => { p.buf() }
+        }
+    }
+
+    pub fn buf_mut(&mut self) -> &mut [u8]{
         match self {
             Self::Req(p) => { p.buf_mut() }
             Self::Acc(p) => { p.buf_mut() }
             Self::Data(p) => { p.buf_mut() }
             Self::Ack(p) => { p.buf_mut() }
             Self::Err(p) => { p.buf_mut() }
+        }
+    }
+
+    pub fn view(&mut self) -> Packet {
+        Packet::from_buf(self.buf_mut()).unwrap()
+    }
+
+    /// get connection id if the packet has such a field
+    pub fn connection_id_or_none(&self) -> Option<ConnectionId> {
+        match self {
+            Self::Req(p) => { p.connection_id_or_none() }
+            Self::Acc(p) => { p.connection_id_or_none() }
+            Self::Data(p) => { p.connection_id_or_none() }
+            Self::Ack(p) => { p.connection_id_or_none() }
+            Self::Err(p) => { p.connection_id_or_none() }
         }
     }
 }

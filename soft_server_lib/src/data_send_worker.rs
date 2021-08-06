@@ -6,9 +6,10 @@ use std::io::{Read, Write};
 use crate::data_send_worker::ReadResult::Eof;
 use soft_shared_lib::packet::data_packet::DataPacket;
 use log::debug;
-use soft_shared_lib::packet::packet::Packet;
 use std::time::Duration;
 use stoppable_thread::{StoppableHandle, SimpleAtomicBool};
+use soft_shared_lib::packet::packet_buf::DataPacketBuf;
+use soft_shared_lib::general::byte_view::ByteView;
 
 
 /// Server worker that handles outgoing messages
@@ -62,12 +63,12 @@ impl DataSendWorker {
                                     log::error!("file read error");
                                     break
                                 }
-                                ReadResult::Ok(mut buf) => {
-                                    state.socket.send_to(&buf, guard.client_addr).expect("failed to send packet");
-                                    debug!("sent {}", Packet::from_buf(&mut buf).unwrap());
+                                ReadResult::Ok(packet) => {
+                                    state.socket.send_to(packet.buf(), guard.client_addr).expect("failed to send packet");
+                                    debug!("sent {}", packet);
                                     //TODO circumvent copy
                                     let send_buf = guard.data_send_buffer.add();
-                                    send_buf.write(&buf).unwrap();
+                                    send_buf.write(packet.buf()).unwrap();
                                     guard.last_packet_sent = Some(sequence_number);
                                 }
                             }
@@ -98,7 +99,7 @@ impl DataSendWorker {
 
 /// TODO improve handling
 enum ReadResult {
-    Ok(Vec<u8>),
+    Ok(DataPacketBuf),
     /// end of file
     Eof,
     /// other read error

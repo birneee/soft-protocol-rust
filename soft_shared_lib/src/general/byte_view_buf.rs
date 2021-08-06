@@ -4,6 +4,7 @@ use std::convert::TryFrom;
 use crate::error::ErrorType;
 use crate::error::Result;
 use std::marker::PhantomData;
+use std::fmt::{Display, Formatter};
 
 /// An owned ByteView
 pub struct ByteViewBuf<T: ByteView + ?Sized> {
@@ -40,5 +41,11 @@ impl<T: ByteView + ?Sized> Deref for ByteViewBuf<T> {
 impl<T: ByteView + ?Sized> DerefMut for ByteViewBuf<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         T::try_from_buf_mut(&mut self.buf).unwrap()
+    }
+}
+
+impl<T: ByteView + ?Sized + Display> Display for ByteViewBuf<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.deref().fmt(f)
     }
 }

@@ -24,10 +24,10 @@ impl LossSimulationUdpSocket {
     /// #Argument
     /// * `p` - the probability that the next package sent will be lost if the last packet was lost
     /// * `q` - the probability that the next package sent will be lost if the last packet was also lost
-    pub fn bind<A: ToSocketAddrs>(addr: A, p: f64, q: f64) -> std::io::Result<LossSimulationUdpSocket> {
+    pub fn bind<A: ToSocketAddrs>(addr: A, p: f64, q: f64) -> std::io::Result<Self> {
         assert!(0.0 <= p && p <= 1.0);
         assert!(0.0 <= q && q <= 1.0);
-        Ok(LossSimulationUdpSocket {
+        Ok(Self {
             inner: UdpSocket::bind(addr)?,
             p,
             q,
