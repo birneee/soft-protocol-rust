@@ -17,14 +17,16 @@ use std::os::unix::prelude::MetadataExt;
 use std::path::Path;
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
-const MAX_PACKET_SIZE: usize = 1188;
+const MAX_PACKET_SIZE: usize = 70;
 
 pub struct Client {
     state: Arc<ClientState>,
     filename: String,
     offset: Atomic<Offset>,
+    initial_ack: Atomic<Option<Instant>>,
 }
 
 impl Client {
@@ -67,6 +69,7 @@ impl Client {
             state,
             filename,
             offset,
+            initial_ack: Atomic::new(None),
         }
     }
 
@@ -140,7 +143,7 @@ impl Client {
         if self.state.state_type.load(SeqCst) == ClientStateType::Error {
             return;
         }
-        log::info!("Cleaning checksum file for {}", self.filename);
+        log::debug!("Cleaning checksum file for {}", self.filename);
         Client::clean_checksum(&self.filename);
     }
 
@@ -242,7 +245,10 @@ impl Client {
             Ok(Acc(p)) => {
                 if let Some(checksum) = self.state.checksum.load(SeqCst) {
                     if p.checksum() != checksum {
-                        log::info!("File changed, re-handshaking to downloading latest file. {}", self.filename);
+                        log::info!(
+                            "File invalid, re-handshaking to downloading latest file. {}",
+                            self.filename
+                        );
                         self.clean_up();
                         // Reset checksum
                         self.state.checksum.store(None, SeqCst);
@@ -271,6 +277,10 @@ impl Client {
                     .socket
                     .send(send_buf.buf())
                     .expect("couldn't send message");
+
+                // First Ack Sent. Store instance now.
+                self.initial_ack.store(Some(Instant::now()), SeqCst);
+
                 log::debug!("Handshake successfully completed");
             }
             Ok(Packet::Err(error_packet)) => {
@@ -330,7 +340,9 @@ impl Client {
             .open(&self.filename)
             .expect("Unable to open file for downloading.");
         let mut writer = BufWriter::new(download_buffer);
-        writer.seek(SeekFrom::Start(self.offset.load(SeqCst))).expect("Unable to seek to offset");
+        writer
+            .seek(SeekFrom::Start(self.offset.load(SeqCst)))
+            .expect("Unable to seek to offset");
 
         let mut recv_buf = [0; MAX_PACKET_SIZE];
         let mut progress = self.state.progress.load(SeqCst);
@@ -340,7 +352,17 @@ impl Client {
         while progress != file_size
             && self.state.state_type.load(SeqCst) == ClientStateType::Downloading
         {
-            let packet_size = self.state.socket.recv(&mut recv_buf).unwrap();
+            let packet_size = self.state.socket.recv(&mut recv_buf).expect("Did not get any data");
+
+            // Store rtt measurement and set read timeout on the socket.
+            if self.state.sequence_nr.load(SeqCst) == 0 {
+                self.state.rtt.store(
+                    Some(self.initial_ack.load(SeqCst).unwrap().elapsed()),
+                    SeqCst,
+                );
+                
+                log::debug!("Initial RTT measurement: {:?}", self.state.rtt.load(SeqCst).unwrap());
+            }
             let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
 
             match unchecked_packet {
@@ -348,6 +370,7 @@ impl Client {
                     eprintln!("received unsupported packet");
                 }
                 Ok(Data(p)) => {
+                    self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
                     let _ = writer.write(p.data());
                     let send_buf = PacketBuf::Ack(AckPacket::new_buf(
                         1,

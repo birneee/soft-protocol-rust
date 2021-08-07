@@ -1,9 +1,8 @@
 use atomic::Atomic;
 use soft_shared_lib::field_types::Checksum;
-use std::net::UdpSocket;
+use std::{net::UdpSocket, time::Duration};
 
 pub struct ClientState {
-    //Todo: determine what needs to be atomic and what not
     pub state_type: Atomic<ClientStateType>,
     /// number of received bytes
     pub progress: Atomic<u64>,
@@ -12,7 +11,9 @@ pub struct ClientState {
     pub sequence_nr: Atomic<u64>,
     pub checksum: Atomic<Option<Checksum>>,
     pub filesize: Atomic<u64>,
-    pub file_changed: Atomic<bool>
+    // Describes if the file has changed during download resumption.
+    pub file_changed: Atomic<bool>,
+    pub rtt: Atomic<Option<Duration>>,
 }
 
 impl ClientState {
@@ -25,7 +26,8 @@ impl ClientState {
             sequence_nr: Atomic::new(0),
             checksum: Atomic::new(None),
             filesize: Atomic::new(0),
-            file_changed: Atomic::new(false)
+            file_changed: Atomic::new(false),
+            rtt: Atomic::new(None)
         }
     }
 }
