@@ -19,24 +19,24 @@ initials = "B."
 surname = "Spies"
 fullname = "Benedikt Spies"
 organization = "Technische Universität München"
-    [author.address]
-    email = "benedikt.spies@tum.de"
+[author.address]
+email = "benedikt.spies@tum.de"
 
 [[author]]
 initials = "T."
 surname = "Midek"
 fullname = "Thomas Midek"
 organization = "Technische Universität München"
-    [author.address]
-    email = "thomas.midek@tum.de"
+[author.address]
+email = "thomas.midek@tum.de"
 
 [[author]]
 initials = "V."
 surname = "Giridharan⁩"
 fullname = "Vyas Giridharan⁩"
 organization = "Technische Universität München"
-    [author.address]
-    email = "giridhar@in.tum.de"
+[author.address]
+email = "giridhar@in.tum.de"
 
 [[author]]
 initials = "D."
@@ -49,8 +49,8 @@ initials = "N."
 surname = "Pett⁩"
 fullname = "Nathalie Pett⁩"
 organization = "Technische Universität München"
-    [author.address]
-    email = "nathalie.pett@tum.de"
+[author.address]
+email = "nathalie.pett@tum.de"
 
 [[author]]
 initials = "F."
@@ -69,9 +69,9 @@ initials = "M."
 surname = "Wiesholler⁩"
 fullname = "Maximilian Wiesholler⁩"
 organization = "Technische Universität München"
-    [author.address]
-    email = "maximilian.wiesholler@tum.de"
-    
+[author.address]
+email = "maximilian.wiesholler@tum.de"
+
 %%%
 
 .# Abstract
@@ -113,7 +113,7 @@ The protocol SHALL be easy to understand and implement.
 The protocol SHALL be able to efficiently transfer small and large files.
 File sizes from 1 byte up to 18 exabytes SHALL be supported.
 The server may support multiple simultaneous connections to clients.
-The protocol MUST support file names larger than 255 bytes.
+The protocol MUST support file names from 1 up to 255 bytes.
 
 {#state-information}
 # State Information
@@ -127,13 +127,14 @@ There are various types of timeout values:
 
 | Timeout                            | Value      | Description                                                                                                                                                     |
 | ---------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ACK Packet Retransmission Timeout  | 3 RTTs     | Determines the time to wait until an ACK packet is retransmitted if an expected DATA packet is not received. The ACK is then retransmitted every 3 RTTs        |
-| DATA Packet Retransmission Timeout | 2 RTTs     | Determines the time to wait until a DATA packet is retransmitted if an expected ACK packet is not received. The DATA packet is then retransmitted every 2 RTTs |
-| Connection Timeout                 | 60 seconds | Determines when the connection state is cleaned up, if expected packets are not received even after retransmission                                             |
-| Congestion Window Cache Timeout    | 10 RTTs    | Determines when the entry in the congestion cache is cleaned up (see (#congestion-window-caching))                                                             |
+| ACK Packet Retransmission Timeout  | 3 RTTs*     | Determines the time to wait until an ACK packet is retransmitted if an expected DATA packet is not received. The ACK is then retransmitted every 3 RTTs. *The client MIGHT double the retransmisssion timeout for consecutiv timeouts |
+| DATA Packet Retransmission Timeout | 2 RTTs*     | Determines the time to wait until a DATA packet is retransmitted if an expected ACK packet is not received. The DATA packet is then retransmitted every 2 RTTs. *The server MIGHT double the retransmisssion timeout for consecutiv timeouts |
+| Connection Timeout                 | 20 RTT | Determines when the connection state is cleaned up, if expected packets are not received even after retransmission                                             |
+| Path Cache Timeout    | 20 RTTs    | Determines when the entry in the path cache is cleaned up (see (#path-caching))                                                             |
 | Packet Loss Timeout                | 2 RTTs     | Multiple duplicate ACK packets with same sequence number are only interpreted as one packet loss in that time frame                                                           |
 Table: Timeouts
 
+The initial RTT is 3 seconds.
 More on how the RTT is calculated can be found in the respective section (#rtt-measurements).
 
 {#rtt-measurements}
@@ -156,6 +157,8 @@ with *gamma* denoting a constant weighting factor.
 The new *RTT* samples are obtained as the time measured between a DATA packets transmission and the reception of its corresponding ACK packet.
 Duplicate ACKs are ignored for the RTT measurement.
 The server can also use the time between the transmission of the ACC packet and the reception of the ACK 0 packet as an RTT sample.
+
+We recommend the gamma value to be 0.9 and to create one sample per RTT.
 
 ### Client RTT Measurement
 
@@ -196,7 +199,7 @@ We recommend the server implementation to use 9840 as the default port.
 
 
 Connections are initialized by a three-way handshake.
-The connection initiation works as follows: 
+The connection initiation works as follows:
 The client first sends a REQ packet to the server endpoint.
 The server answers this with an ACC packet, which includes the checksum as well as the file size. Note, that with the transmission of the ACC packet, the server also sends the connection ID (CID). The client acknowledges the connection ID by sending the packet ACK 0.
 
@@ -237,8 +240,8 @@ Figure: Connection Establishment
 {#file-transfer-phase}
 ### File Transfer Phase (including example)
 
-After the handshake (i.e. the ACK 0) the server directly starts sending the first bytes of the requested file to the client as a DATA packet (#data-packet). 
-With the sequence number the client is able to sort incoming packets correctly so that the bytes are appended in correct order to the file. 
+After the handshake (i.e. the ACK 0) the server directly starts sending the first bytes of the requested file to the client as a DATA packet (#data-packet).
+With the sequence number the client is able to sort incoming packets correctly so that the bytes are appended in correct order to the file.
 By knowing the file size both endpoints know if there are more data packets to transfer.
 
 ~~~ ascii-art
@@ -290,6 +293,8 @@ This draft talks about connection migration, when both the client and the server
 When the server notices a migration of the client, it should reset the congestion window to the initial value of 1 MPS.
 An example, for when connection migration might be especially useful, is when mobile clients want to switch to a different network interface.
 
+When the connection is migrated the congestion information and the RTT has to be reset to the initial values.
+The server MIGHT use already cached values from the Path Cache (see #path-caching).
 
 The following diagram depicts what happens during connection migration:
 
@@ -338,21 +343,25 @@ Figure: Migration Example
 {#connection-resumption}
 ### Connection Resumption
 This protocol talks about connection resumption, when the client wants to resume a (partial) file download after the state associated with a connection has already been discarded.
-To do this, another three-way handshake for connection establishment has to be performed (see (#connection-initiation)). 
+To do this, another three-way handshake for connection establishment has to be performed (see (#connection-initiation)).
 The difference between an initial handshake and a resumption handshake is, that the offset communicated is not 0.
 The client sets the offset in the REQ packet to the byte index of the file at which it wants to proceed with the transfer.
-The ACC packet includes a new connection ID and the server's file checksum. 
-This checksum will be compared by the client to its own, previously received stored checksum. 
+The ACC packet includes a new connection ID and the server's file checksum.
+This checksum will be compared by the client to its own, previously received stored checksum.
 
 
 Two scenarios may happen:
 
-1. The client's previously stored checksum and the newly received checksum are identical: The file transfer will be resumed. 
-2. The client's previously stored checksum and the new received checksum are not identical: This implies, that the file changed server-side and the next data streams from the server will be inconsistent to the clients received data bytes. The client will therefore send another REQ with OFFSET set to 0 - which tells the server that the file needs to be sent starting from the first byte. 
+1. The client's previously stored checksum and the newly received checksum are identical: The file transfer will be resumed.
+2. The client's previously stored checksum and the new received checksum are not identical: This implies, that the file changed server-side and the next data streams from the server will be inconsistent to the clients received data bytes. The client will therefore send another REQ with OFFSET set to 0 - which tells the server that the file needs to be sent starting from the first byte.
+
+> [name=vyas_g] If The client recieves an invalid offset while trying to resume, This means that the server's file has reduced in size. it has to reset the file and start another SOFT session (Handshake, Download).
+> [name=benedikt] i would like to do a small adjustment:
+If the client receives an invalid offset while trying to resume, this means that the server's file has reduced in size. The client MIGHT initiate a new SOFT connection with offset 0, to receive the new version.
 
 {#acknowledgments}
 ## Acknowledgments
-Only DATA packets are acknowledged by the client. 
+Only DATA packets are acknowledged by the client.
 SOFT uses positive cumulative forward acknowledgements.
 The client should acknowledge each received DATA packet immediately.
 If the client receives a DATA packet with a higher sequence number than expected, it will immediately send an ACK packet with the sequence number of the next DATA packet it wants to receive.
@@ -378,25 +387,32 @@ Not receiving any packet for some time might be an indication for migration (see
 | Error                | Code | Description                                            | Sent By         |
 | -------------------- | ---- | ------------------------------------------------------ | --------------- |
 | STOP                 | 0    | Graceful stop in the middle of a transfer              | Client          |
-| UNKNOWN              | 1    | If no other error fits<br/> e.g. technical errors      | Client & Server |
+| INTERNAL             | 1    | If no other error fits<br/> e.g. technical errors      | Client & Server |
 | FILE\_NOT\_FOUND     | 2    | If requested file was not found by the server          | Server          |
 | BAD\_PACKET          | 3    | If the received packet contains invalid fields         | Client & Server |
 | CHECKSUM\_NOT\_READY | 4    | If server is not done generating the checksum          | Server          |
 | INVALID\_OFFSET      | 5    | If offset is larger than the file size                 | Server          |
 | UNSUPPORTED\_VERSION | 6    | If protocol version is not supported by the server     | Server          |
 | FILE\_CHANGED        | 7    | If file changed in the middle of a transfer/connection | Server          |
-
-Figure: Errors
+Table: Errors
 
 Until the handshake has finished and the client has successfully obtained a connection ID, the client must ignore the connection ID field of incoming error packets.
 Every error implicitly closes a connection.
+
+Because Err packets are not acknowledged they might get lost.
+For the outher endpoint this would lead to a normal connection timeout.
+A implementation MAY send the same Err packet multiple times to increase the likelihood that the other side will receive it.
+
+If client or server receive an unkown or unspecified error code they should nevertheless close the connection, because the list of specified error codes might be extended in future version.
+
+Instead of sending an Error, implementations MAY ignore certain invalid packets.
 
 {#flow-and-congestion-control}
 # Flow Control and Congestion Control
 
 {#flow-control}
 ## Flow Control
-Flow control is achieved by letting the client communicate its current ReceiveWindow. It is sent by the client endpoint in every ACK packet and is comprised of the receive buffer size. 
+Flow control is achieved by letting the client communicate its current ReceiveWindow. It is sent by the client endpoint in every ACK packet and is comprised of the receive buffer size.
 The ReceiveWindow is the number of packets that can be received by the client.
 The maximum packet size supported by the client's buffer is the sent MPS in the REQ packet.
 
@@ -411,8 +427,8 @@ MaxWindow = min{ReceiveWindow, CongestionWindow}
 EffectiveWindow = MaxWindow - (LastPacketSent - LastPacketAcked)
 ~~~
 
-with the *EffectiveWindow* indicating how much data can be sent. 
-The *MaxWindow* is the maximum number of unacknowledged DATA packets allowed in circulation. 
+with the *EffectiveWindow* indicating how much data can be sent.
+The *MaxWindow* is the maximum number of unacknowledged DATA packets allowed in circulation.
 If the *EffectiveWindow* is greater than 0 more data may be transmitted.
 
 
@@ -426,18 +442,22 @@ w(0) = alpha
 w(t+1) = w(t) + alpha    if no congestion is detected
 w(t+1) = w(t) * beta     if congestion is detected
 ~~~
- 
-The additive increase factor *alpha* is chosen to be one MPS. 
+
+The additive increase factor *alpha* is chosen to be one MPS.
 The multiplicative decrease factor *beta* is chosen as 1/2 which results in halving the congestion window if congestion is detected.
 
 
 Then, the congestion avoidance phase starts. During congestion avoidance, the window size is only increased by (1/cwnd) per acknowledged packet. The behavior in case of two duplicate acknowledgments is repeated. If at any time a timeout occurs, the threshold for congestion avoidance is set to half the current congestion window size, the congestion window is set to 1 MPS and a new slow start phase that continues until the congestion avoidance threshold is started.
 
-{#congestion-window-caching}
-### Congestion Window Caching
-A SOFT connection is designed to transfer single files. To transfer multiple files in one request, a new connection must be initialized for each one. There are drawbacks of this behavior when it comes to congestion control, as each connection would per se start with a new slow start phase resetting the congestion window. This can drastically reduce the throughput, especially with multiple, small files. To mitigate this effect and avoid slow start phases for each new, but related connection it is recommended to use server-side congestion window caching, i.e. despite closing the connection, the server remembers the congestion window that is associated with the IP and UDP port (not connection ID).
+{#path-caching}
+### Path Caching
+A SOFT connection is designed to transfer single files. To transfer multiple files, a new connection must be initialized for each one. There are drawbacks of this behavior when it comes to congestion control, as each connection would per se start with a new slow start phase resetting the congestion window. This can drastically reduce the throughput, especially with multiple, small files. To mitigate this effect and avoid slow start phases for each new, but related connection it is recommended to use server-side path caching, i.e. despite closing the connection, the server remembers the congestion information and the RTT that is associated with the IP and UDP port (not connection ID).
 Therefore we also recommend the client to reuse the same UDP port for multiple file transfers.
 For the cache timeout see (#timeout-values).
+
+> [name=max] do we also cache in the case of connection migration or only after closing the connection when the file transfer has finished?
+
+> [name=benedikt] i already added some text to migration section. i think this path information can be reused in all situations.
 
 {#packet-types}
 # Packet Types
@@ -494,10 +514,10 @@ Table: Fields
 ## File Request Packet (REQ)
 
 - 1 byte protocol version
-- 1 byte packet type: 0 
+- 1 byte packet type: 0
 - 2 byte max segment size supported by client
 - 8 byte offset
-- variable length file name 
+- variable length file name
 
 The file name has to be at least 1 byte and maximum 484 byte.
 The server can calculate the length of the file name via the UDP datagram size.
@@ -508,7 +528,7 @@ The maximum file name size is based on the minimal IPv4 packet size network host
 
 Note: SOFT REQ HEADER - everything that is not the file name
 
- 
+
 ~~~
 (576 - 40 (IPv4 header) - 20 (IPv4 Options) - 20 (UDP Datagram Header) - 12 (SOFT REQ Header)) byte = 484 byte
 ~~~
@@ -516,6 +536,18 @@ Note: SOFT REQ HEADER - everything that is not the file name
 
 Currently the protocol only supports IPv4.
 For the consideration of IPv6 see (#ipv6-support).
+
+The client has to choose the Max Packet Size (MPS) field in the REQ packet to avoid IP fragmentation.
+Most networks have a MTU of 1280 or higher.
+That is why we recommand a default MPS of 1200 byte.
+
+~~~
+(1280 (MTU) - 40 (IPv4 header) - 20 (IPv4 Options) - 20 (UDP Datagram Header) byte = 1200 byte
+~~~
+
+> [name=max] I would say we keep the 576 as it is. And as recommendation for the MPS 1280 bytes.
+
+> [name=benedikt] default MPS is 1200, ok?
 
 ~~~ ascii-art
  0               1               2               3
@@ -537,7 +569,7 @@ Figure: REQ packet
 ## Accept File Transfer Packet (ACC)
 
 - 1 byte protocol version
-- 1 byte packet type: 1 
+- 1 byte packet type: 1
 - 4 byte connection ID
 - 8 byte file size in bytes
 - 32 byte SHA 256 checksum
@@ -574,12 +606,13 @@ Figure: REQ packet
 Figure: ACC packet
 
 Note that the padding is unused space only used for alignment.
+The padding should be set to 0 and should be ignored by current version, because it might be used by future versions.
 
 {#data-packet}
 ## Data Packet (DATA)
 
 - 1 byte protocol version
-- 1 byte packet type: 2 
+- 1 byte packet type: 2
 - 4 byte connection ID
 - 8 byte sequence number
 - variable size data payload
@@ -614,12 +647,13 @@ Figure: DATA packet
 
 Note that the padding is unused space only used for alignment.
 
+The padding should be set to 0 and should be ignored by current version, because it might be used by future versions.
 
 {#ack-packet}
 ## Acknowledgement Packet (ACK)
 
 - 1 byte protocol version
-- 1 byte packet type: 3 
+- 1 byte packet type: 3
 - 2 byte receive window
 - 4 byte connection ID
 - 8 byte next sequence number
@@ -660,6 +694,8 @@ Figure: ERR packet
 
 Note that the padding is unused space only used for alignment.
 
+The padding should be set to 0 and should be ignored by current version, because it might be used by future versions.
+
 {#iana}
 # IANA Considerations
 This memo includes no request to IANA.
@@ -673,6 +709,12 @@ Security considerations have not been a paramount concern during the initial dev
 {#dos}
 ### Denial of Service
 Denial of service attacks to render the server unresponsive are possible in the current version of this protocol. To prevent the server from crashing due of full memory, it might reject new connections when a certain threshold is reached. This, however, does not prevent attackers from filling the connection queue with requests so a genuine client cannot get their request accepted.
+
+> [name=benedikt] can be prevented with cookies in REQ, and recommend usage of ChecksumNotReady error
+
+> [name=benedikt] todo mention that our protocol can be used for DDoS because ACC might be larger than REQ
+
+> [name=benedikt] todo mention that checksum calculation is very resource intensive, and if done on the fly, this can result in timeouts
 
 {#integrity}
 ## Integrity
@@ -693,7 +735,7 @@ SOFT packets could be encapsulated in another encrypted transport protocol.
 Future versions of the SOFT protocol might specify a standard way of doing this.
 
 ### Rooting
-It is not the responsibility of the SOFT protocol to validate the file name that is sent by the client in the REQ packet. The file name can include any file path. An attacker can make use of this with a rooting attack: By adding a '/' as first character in a unix-like operating system, an insecure server implementation might jump to the root directory of the file system. Moreover, the '../' characters are an easy way to navigate through server's file structure. 
+It is not the responsibility of the SOFT protocol to validate the file name that is sent by the client in the REQ packet. The file name can include any file path. An attacker can make use of this with a rooting attack: By adding a '/' as first character in a unix-like operating system, an insecure server implementation might jump to the root directory of the file system. Moreover, the '../' characters are an easy way to navigate through server's file structure.
 
 
 Therefore, a secure server implementation must restrict file access, e.g. to only serve files from a specified directory.
@@ -710,10 +752,10 @@ The SOFT protocol has no control over the IP layer beneath the UDP layer. But de
 
 This SOFT protocol version already provides the possibility to avoid IP layer fragmentation for IPv4 at all. Since 576 bytes is the minimum MTU size IPv4 hosts must support, the SOFT server can always set the upper limit of the maximum packet size to 496 bytes when a REQ packet with client's maximum packet size comes in.
 
-Furthermore, the SOFT protocol has a rudimentary feature for the client to probe the maximum SOFT packet size. With the MPS inside the REQ packet of the handshake, the server may agree with this value and starts to send DATA packets with this MPS length. If the client does not receive DATA packets, it can assume that it is due to a too high MPS value that results in IP fragmentation problems. 
+Furthermore, the SOFT protocol has a rudimentary feature for the client to probe the maximum SOFT packet size. With the MPS inside the REQ packet of the handshake, the server may agree with this value and starts to send DATA packets with this MPS length. If the client does not receive DATA packets, it can assume that it is due to a too high MPS value that results in IP fragmentation problems.
 
 
-A future version of the SOFT protocol may avoid IP layer fragmentation issues by supporting path MTU discovery. For the client, a path MTU discovery can be started before sending the REQ packet. For the server, the discovery to the client would be done after receiving the REQ packet. However, this introduces complexity into the SOFT protocol since the server must notify the client that it is conducting a discovery so that the client does not start to retransmit the REQ packet due to an assumed timeout. Moreover, path MTU discovery from both sides would also be necessary again after a connection migration happened. 
+A future version of the SOFT protocol may avoid IP layer fragmentation issues by supporting path MTU discovery. For the client, a path MTU discovery can be started before sending the REQ packet. For the server, the discovery to the client would be done after receiving the REQ packet. However, this introduces complexity into the SOFT protocol since the server must notify the client that it is conducting a discovery so that the client does not start to retransmit the REQ packet due to an assumed timeout. Moreover, path MTU discovery from both sides would also be necessary again after a connection migration happened.
 
 {#ipv6-support}
 ## Considerations on IPv6 Support
@@ -727,6 +769,15 @@ For IPv6 support, the maximum byte length of the file name in the REQ packet MUS
 Note: The calculation above does not take IPv6 extension headers into account.
 
 Generally, the SOFT protocol could be encapsulated in an IPv6 packet, but the usage of extension headers might lead to fragmentation and the transport cannot be guaranteed.
+
+## Request Cookies
+
+> [name=benedikt] req cookies to postpone state creation on server
+
+
+## Better Checksums
+
+> [name=benedikt] udp datagram checksum is not very helpful, on multiple bit flips. future version might introduce more robust checksums for file chunks.
 
 {backmatter}
 
