@@ -34,10 +34,13 @@ impl SendBuffer {
     }
 
     pub fn get(&mut self, sequence_number: SequenceNumber) -> Option<&mut [u8]> {
+        if sequence_number < self.front_sequence_number {
+            return None;
+        }
         self.packet_queue.get_mut((sequence_number - self.front_sequence_number) as usize).map(|v| v.as_mut_slice())
     }
 
-    // drop all packets below the next_sequence_number
+    /// drop all packets below the next_sequence_number
     pub fn drop_before(&mut self, next_sequence_number: SequenceNumber) {
         while !self.packet_queue.is_empty() && next_sequence_number > self.front_sequence_number {
             let mut vec = self.packet_queue.pop_front().unwrap();

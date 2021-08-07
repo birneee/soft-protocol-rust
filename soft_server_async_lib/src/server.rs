@@ -138,7 +138,7 @@ mod tests {
     use std::fs::File;
     use std::io::{Write, ErrorKind};
     use std::thread::sleep;
-    use soft_shared_lib::field_types::{MaxPacketSize, FileSize, ConnectionId};
+    use soft_shared_lib::field_types::{MaxPacketSize, FileSize, ConnectionId, Offset};
     use test_case::test_case;
     use soft_shared_lib::helper::sha256_helper::sha256_from_bytes;
     use soft_shared_lib::helper::transfer_helper::receive;
@@ -385,6 +385,78 @@ mod tests {
             ).buf(),
             server.local_addr()
         ).unwrap();
+
+        // validate content
+        assert_eq!(std::str::from_utf8(&received_file_content).unwrap(), FILE_CONTENT);
+
+        // stop server
+        drop(server);
+    }
+
+    #[test]
+    fn resumption(){
+        const FILE_NAME: &str = "hello.txt";
+        const FILE_CONTENT: &str = "hello world";
+        const MAX_PACKET_SIZE: MaxPacketSize = 22; // content fit in two packet
+        const RECEIVE_TIMEOUT: Duration = Duration::from_millis(100);
+
+        //let _ = env_logger::builder().filter_level(log::LevelFilter::Debug).try_init();
+
+        // start server
+        let served_dir = TempDir::new("soft_test").unwrap();
+        let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
+        file.write(FILE_CONTENT.as_bytes()).unwrap();
+        let server = Server::start("127.0.0.1:0", served_dir.into_path());
+
+        let mut received_file_content = Vec::<u8>::with_capacity(FILE_CONTENT.len());
+        let mut connection_count = 0;
+
+        while received_file_content.len() != FILE_CONTENT.len() {
+            connection_count += 1;
+            let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+            client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
+
+            // send Req
+            client_socket.send_to(
+                &ReqPacket::new_buf(
+                    MAX_PACKET_SIZE,
+                    FILE_NAME,
+                    received_file_content.len() as Offset,
+                ).buf(),
+                server.local_addr(),
+            ).unwrap();
+
+            // receive Acc
+            let acc_packet: AccPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
+            let connection_id = acc_packet.connection_id();
+            assert_eq!(sha256_from_bytes(FILE_CONTENT.as_bytes()), acc_packet.checksum());
+
+            // send Ack 0
+            client_socket.send_to(
+                &AckPacket::new_buf(
+                    10,
+                    connection_id,
+                    0,
+                ).buf(),
+                server.local_addr(),
+            ).unwrap();
+
+            // receive Data 0
+            let data_packet: DataPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
+            received_file_content.write(data_packet.data()).unwrap();
+
+            // send Ack 1
+            client_socket.send_to(
+                &AckPacket::new_buf(
+                    10,
+                    connection_id,
+                    1
+                ).buf(),
+                server.local_addr()
+            ).unwrap();
+        }
+
+        assert_eq!(connection_count, 2);
 
         // validate content
         assert_eq!(std::str::from_utf8(&received_file_content).unwrap(), FILE_CONTENT);
