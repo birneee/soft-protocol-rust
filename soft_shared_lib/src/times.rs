@@ -12,7 +12,7 @@ pub fn data_packet_retransmission_timeout(rtt: Duration) -> Duration {
 }
 
 pub fn congestion_window_cache_timeout(rtt: Duration) -> Duration {
-    return rtt * 10;
+    return rtt * 20;
 }
 
 pub fn packet_loss_timeout(rtt: Duration) -> Duration {
