@@ -103,7 +103,7 @@ impl CongestionCache {
             } else {
                 value.congestion_window += 1.0 / value.congestion_window;
             }
-            debug!("updated congestion window of {} to {}", addr, value.congestion_window);
+            debug!("increased congestion window of {} to {}", addr, value.congestion_window);
         });
     }
 
@@ -112,9 +112,9 @@ impl CongestionCache {
     /// should be called on congestion loss
     pub fn decrease_congestion_window(&self, addr: SocketAddr){
         self.update(addr, |value| {
-            value.congestion_window = value.congestion_window * CONGESTION_BETA;
+            value.congestion_window = f64::max(value.congestion_window * CONGESTION_BETA, 1.0);
             value.congestion_avoidance_threshold = value.congestion_window;
-            debug!("updated congestion window of {} to {}", addr, value.congestion_window);
+            debug!("decreased congestion window of {} to {}", addr, value.congestion_window);
         });
     }
 
@@ -126,7 +126,7 @@ impl CongestionCache {
             value.congestion_avoidance_threshold =  value.congestion_window * CONGESTION_BETA;
             value.congestion_window = INITIAL_CONGESTION_WINDOW;
             debug!("enter slow start phase");
-            debug!("updated congestion window of {} to {}", addr, value.congestion_window);
+            debug!("reset congestion window of {} to {}", addr, value.congestion_window);
         });
     }
 
