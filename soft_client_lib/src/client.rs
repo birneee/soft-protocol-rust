@@ -246,7 +246,7 @@ impl Client {
                 if let Some(checksum) = self.state.checksum.load(SeqCst) {
                     if p.checksum() != checksum {
                         log::info!(
-                            "File invalid, re-handshaking to downloading latest file. {}",
+                            "File changed, re-handshaking to downloading latest file. {}",
                             self.filename
                         );
                         self.clean_up();
