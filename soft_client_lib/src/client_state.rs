@@ -23,7 +23,7 @@ impl ClientState {
             socket,
             connection_id: Atomic::new(32),
             sequence_nr: Atomic::new(0),
-            checksum: Atomic::new(Some([0; 32])),
+            checksum: Atomic::new(None),
             filesize: Atomic::new(0),
             file_changed: Atomic::new(false)
         }

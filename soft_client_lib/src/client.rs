@@ -236,6 +236,8 @@ impl Client {
                     if p.checksum() != checksum {
                         log::info!("File invalid, re-handshaking to downloading latest file. {}", self.filename);                        self.state.state_type.store(ClientStateType::Error, SeqCst);
                         self.clean_up();
+                        // Reset checksum
+                        self.state.checksum.store(None, SeqCst);
                         self.state.file_changed.store(true, SeqCst);
                         return;
                     } else {
