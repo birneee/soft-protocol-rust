@@ -371,7 +371,7 @@ impl Client {
                 }
                 Ok(Data(p)) => {
                     self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
-                    let _ = writer.write(p.data());
+                    let _ = writer.write_all(p.data()).unwrap();
                     let send_buf = PacketBuf::Ack(AckPacket::new_buf(
                         1,
                         connection_id,
