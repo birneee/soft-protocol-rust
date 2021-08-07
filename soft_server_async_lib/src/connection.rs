@@ -4,7 +4,7 @@ use log::{debug};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use soft_shared_lib::packet::acc_packet::AccPacket;
-use soft_shared_lib::field_types::{ConnectionId, SequenceNumber, ReceiveWindow, MaxPacketSize};
+use soft_shared_lib::field_types::{ConnectionId, SequenceNumber, MaxPacketSize};
 use soft_shared_lib::general::byte_view::ByteView;
 use tokio::io::{BufReader, AsyncSeekExt, SeekFrom, AsyncReadExt};
 use crate::congestion_cache::{CongestionCache, CongestionWindow};
@@ -29,12 +29,14 @@ use soft_shared_lib::helper::range_helper::{compare_range, RangeCompare};
 use crate::send_buffer::SendBuffer;
 use std::time::Duration;
 use tokio::fs::File;
-use std::cmp::min;
+use std::cmp::{min, max};
 use soft_shared_lib::packet::data_packet::DataPacket;
 use soft_shared_lib::packet::packet::Packet;
 use std::io::Write;
 use soft_shared_lib::packet::req_packet::ReqPacket;
 use soft_shared_lib::constants::SOFT_MAX_PACKET_SIZE;
+use std::sync::atomic::AtomicU16;
+use std::sync::atomic::Ordering::SeqCst;
 
 const PACKET_CHANNEL_SIZE: usize = 10;
 
@@ -57,7 +59,8 @@ pub struct Connection {
     /// -1 if no Data packet has been sent yet
     last_packet_sent: Mutex<InternalSequenceNumber>,
     packet_loss_timeout: Mutex<Instant>,
-    client_receive_window: Mutex<ReceiveWindow>,
+    /// same size as ReceiveWindow,
+    client_receive_window: AtomicU16,
     data_send_buffer: Mutex<SendBuffer>,
     /// None in the beginning, Some after the handshake
     reader: Mutex<BufReader<File>>,
@@ -68,6 +71,7 @@ pub struct Connection {
     ///
     /// SequenceNumber -1 is the instant when the ACC packet is sent
     data_send_instant_sample: Mutex<(InternalSequenceNumber, Instant)>,
+    filesize: u64,
 }
 
 impl Connection {
@@ -137,8 +141,9 @@ impl Connection {
             last_forward_acknowledgement: Mutex::new(-1),
             last_packet_sent: Mutex::new(-1),
             packet_loss_timeout: Mutex::new(Instant::now()),
-            client_receive_window: Mutex::new(0),
+            client_receive_window: AtomicU16::new(0),
             data_send_buffer: Mutex::new(SendBuffer::new()),
+            filesize: reader.get_ref().metadata().await.unwrap().len(),
             reader: Mutex::new(reader),
             max_packet_size: min(req.max_packet_size(), SOFT_MAX_PACKET_SIZE as MaxPacketSize),
             data_send_instant_sample: Mutex::new((-1, acc_send_instant)),
@@ -188,7 +193,7 @@ impl Connection {
                             debug!("retransmission timeout on connection {}", self.connection_id);
                             self.reset_congestion_window().await;
                             // reduce in flight packets to trigger retransmission
-                            *self.last_packet_sent.lock().await = min(self.last_packet_acknowledged().await, -1);
+                            *self.last_packet_sent.lock().await = max(self.last_packet_acknowledged().await, -1);
                         }
                     }
                 };
@@ -213,7 +218,7 @@ impl Connection {
         match compare_range(&expected_forward_acks, ack_next_sequence_number) {
             RangeCompare::LOWER => {
                 if ack_next_sequence_number == *(self.last_forward_acknowledgement.lock().await) as SequenceNumber {
-                    // duplicate ack
+                    debug!("detected duplicate acks {}", ack_next_sequence_number);
                     if Instant::now() > *self.packet_loss_timeout.lock().await {
                         // handle packet lost
                         *self.packet_loss_timeout.lock().await = Instant::now() + times::packet_loss_timeout(self.rtt().await);
@@ -226,7 +231,7 @@ impl Connection {
             }
             RangeCompare::CONTAINED => {
                 // normal sequential ack
-                *self.client_receive_window.lock().await = ack.receive_window();
+                self.client_receive_window.store(ack.receive_window(), SeqCst);
                 *self.last_forward_acknowledgement.lock().await = ack_next_sequence_number as i128;
                 self.data_send_buffer.lock().await.drop_before(ack_next_sequence_number);
                 if ack_next_sequence_number != 0 {
@@ -339,8 +344,12 @@ impl Connection {
         *self.last_forward_acknowledgement.lock().await - 1
     }
 
+    /// only increase when congestion_window is smaller than receive_window
     async fn increase_congestion_window(&self) {
-        self.congestion_cache.increase_congestion_window(*self.client_addr.lock().await);
+        let client_addr = *self.client_addr.lock().await;
+        if self.congestion_cache.congestion_window(client_addr) < self.client_receive_window.load(SeqCst) {
+            self.congestion_cache.increase_congestion_window(client_addr);
+        }
     }
 
     async fn decrease_congestion_window(&self) {
@@ -360,7 +369,7 @@ impl Connection {
     /// there might still be packets in the data send buffer
     async fn eof(&self) -> bool {
         let mut reader = self.reader.lock().await;
-        reader.stream_position().await.unwrap() == reader.get_ref().metadata().await.unwrap().len()
+        reader.stream_position().await.unwrap() == self.filesize
     }
 
     /// true if all bytes of the file are transferred and acknowledged by the client
@@ -373,7 +382,7 @@ impl Connection {
     }
 
     pub async fn max_window(&self) -> u16 {
-        min(*self.client_receive_window.lock().await, self.congestion_window().await)
+        min(self.client_receive_window.load(SeqCst), self.congestion_window().await)
     }
 
     async fn effective_window(&self) -> u16 {
