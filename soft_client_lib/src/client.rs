@@ -1,5 +1,4 @@
 use crate::client_state::{ClientState, ClientStateType};
-use atomic::Atomic;
 use log::info;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use soft_shared_lib::field_types::{Checksum, Offset};
@@ -25,50 +24,55 @@ const MAX_PACKET_SIZE: usize = 2usize.pow(16) - 8 - 20 - 50;
 pub struct Client {
     state: Arc<ClientState>,
     filename: String,
-    offset: Atomic<Offset>
+    offset: Offset,
+    checksum: Option<Checksum>,
 }
 
 impl Client {
     pub fn init(socket: UdpSocket, filename: String) -> Client {
         let state = Arc::new(ClientState::new(socket));
         let download_buffer: File;
-        let offset = Atomic::new(0);
+        let mut offset: Offset = 0;
+        let checksum: Option<Checksum>;
 
         log::info!("Creating client to get file {}", filename);
         state.state_type.store(ClientStateType::Preparing, SeqCst);
 
         if Path::new(&filename).exists() {
             log::info!("File exists: {}", &filename);
-            let checksum = Client::get_checksum(&filename);
+            checksum = Client::get_checksum(&filename);
 
-            if let Some(checksum) = checksum {
+            if let Some(_) = checksum {
                 log::debug!("Checksum file found for {}, resuming download.", &filename);
                 download_buffer = OpenOptions::new()
                     .read(true)
                     .open(&filename)
                     .expect(format!("File download currupted: {}", &filename).as_str());
                 let metadata = download_buffer.metadata().expect("file error occoured");
-                offset.store(metadata.size(), SeqCst);
-                log::debug!("File Offset for resumption: {}", metadata.size());
-                state.checksum.store(Some(checksum), SeqCst);
+                offset = metadata.size();
                 // Set the progress to the offset
-                state.progress.store(metadata.size(), SeqCst);
+                state.progress.store(offset, SeqCst);
             } else {
                 log::error!("File already present");
                 // Preemptively exits out of each client operation
                 state.state_type.store(ClientStateType::Downloaded, SeqCst);
             }
         } else {
+            checksum = None;
             File::create(&filename).expect("Unable to create file");
         }
 
         Client {
             state,
             filename,
-            offset
+            offset,
+            checksum,
         }
     }
 
+    pub fn get_offset(&self) -> u64 {
+        return self.offset;
+    }
     /// read the checksum from the separate checksum file.
     /// used for download resumption.
     /// None if file does not exist
@@ -96,11 +100,11 @@ impl Client {
     ///
     /// # Arguments
     /// * `checksum` - The checksum to be stored
-    fn store_checksum(filename: &str, mut checksum: Checksum) {
+    fn store_checksum(&self, mut checksum: Checksum) {
         let mut checksum_file = OpenOptions::new()
             .create(true)
             .write(true)
-            .open(format!("{}.checksum", filename))
+            .open(format!("{}.checksum", &self.filename))
             .expect("Unable to create checksum file");
         checksum_file
             .write_all(&mut checksum)
@@ -120,8 +124,9 @@ impl Client {
             return;
         }
 
-        self.handshake();
+        self.make_handshake();
 
+        //TODO: Refine download
         self.do_file_transfer();
 
         self.validate_download();
@@ -138,7 +143,6 @@ impl Client {
         if self.state.state_type.load(SeqCst) == ClientStateType::Error {
             return;
         }
-        log::info!("Cleaning checksum file for {}", self.filename);
         Client::clean_checksum(&self.filename);
     }
 
@@ -180,16 +184,6 @@ impl Client {
         self.state.state_type.store(ClientStateType::Error, SeqCst);
     }
 
-    fn handshake(&self) {
-        self.make_handshake();
-
-        if self.state.file_changed.load(SeqCst) == true {
-            // File's changed, the checksums are different, set the offset to 0 and re handshake.
-            self.offset.store(0, SeqCst);
-            self.make_handshake();
-        }
-    }
-
     fn make_handshake(&self) {
         if self.state.state_type.load(SeqCst) == ClientStateType::Stopped
             || self.state.state_type.load(SeqCst) == ClientStateType::Error
@@ -207,7 +201,7 @@ impl Client {
         send_buf = PacketBuf::Req(ReqPacket::new_buf(
             MAX_PACKET_SIZE as u16,
             &self.filename,
-            self.offset.load(SeqCst),
+            self.offset,
         ));
 
         self.state
@@ -232,21 +226,21 @@ impl Client {
                 return;
             }
             Ok(Acc(p)) => {
-                if let Some(checksum) = self.state.checksum.load(SeqCst) {
+                if let Some(checksum) = self.checksum {
                     if p.checksum() != checksum {
-                        log::info!("File invalid, re-handshaking to downloading latest file. {}", self.filename);
+                        log::error!("File invalid, checksum does not match. {}", self.filename);
+                        self.state.state_type.store(ClientStateType::Error, SeqCst);
                         self.clean_up();
-                        self.state.file_changed.store(true, SeqCst);                                                
                         return;
                     } else {
                         log::info!("Partial file checksums are equal. Continuing download");
                     }
                 } else {
-                    Client::store_checksum(self.filename.as_str(), p.checksum());
+                    self.store_checksum(p.checksum());
                 }
                 self.state.connection_id.store(p.connection_id(), SeqCst);
                 self.state.filesize.store(p.file_size(), SeqCst);
-                self.state.checksum.store(Some(p.checksum()), SeqCst);
+                self.state.checksum.store(p.checksum(), SeqCst);
 
                 log::debug!("New Connection created");
                 log::debug!("Connection ID: {}", p.connection_id());
@@ -289,7 +283,7 @@ impl Client {
         let mut reader = BufReader::new(file);
         let checksum = generate_checksum(&mut reader);
 
-        if self.state.checksum.load(SeqCst).eq(&Some(checksum)) {
+        if self.state.checksum.load(SeqCst).eq(&checksum) {
             info!(
                 "Checksum validated {}, file downloaded",
                 sha256_to_hex_string(checksum)
