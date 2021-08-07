@@ -234,7 +234,7 @@ impl Client {
             Ok(Acc(p)) => {
                 if let Some(checksum) = self.state.checksum.load(SeqCst) {
                     if p.checksum() != checksum {
-                        log::info!("File invalid, re-handshaking to downloading latest file. {}", self.filename);                        self.state.state_type.store(ClientStateType::Error, SeqCst);
+                        log::info!("File invalid, re-handshaking to downloading latest file. {}", self.filename);
                         self.clean_up();
                         // Reset checksum
                         self.state.checksum.store(None, SeqCst);
