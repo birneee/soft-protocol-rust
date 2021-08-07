@@ -144,7 +144,7 @@ fn download_file(socket: UdpSocket, filename: &str) {
     let mut current_state: ClientStateType = Preparing;
     let mut stopped = false;
 
-    let mut pb = setup_progress_bar(client.get_offset());
+    let mut pb = setup_progress_bar((client.progress() * 100.00) as u64);
     loop {
         match client.state() {
             Preparing => {}
