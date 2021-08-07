@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
-const MAX_PACKET_SIZE: usize = 70;
+const MAX_PACKET_SIZE: usize = 1200;
 
 pub struct Client {
     state: Arc<ClientState>,
@@ -40,7 +40,7 @@ impl Client {
 
         if Path::new(&filename).exists() {
             log::info!("File exists: {}", &filename);
-            let checksum = Client::get_checksum(&filename);
+            let checksum = Client::generate_file_checksum(&filename);
 
             if let Some(checksum) = checksum {
                 log::debug!("Checksum file found for {}, resuming download.", &filename);
@@ -79,7 +79,7 @@ impl Client {
     ///
     /// # Arguments
     /// * `filename` - The filename to retrieve checksum for
-    fn get_checksum(filename: &str) -> Option<Checksum> {
+    fn generate_file_checksum(filename: &str) -> Option<Checksum> {
         if Path::new(format!("{}.checksum", &filename).as_str()).exists() {
             let mut checksum: Checksum = [0; 32];
             let mut checksum_file = OpenOptions::new()
