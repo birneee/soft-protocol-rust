@@ -330,7 +330,7 @@ impl Client {
                     eprintln!("received unsupported packet");
                 }
                 Ok(Data(p)) => {
-                    let _ = download_buffer.write(p.data());
+                    download_buffer.write_all(p.data()).unwrap();
                     let send_buf = PacketBuf::Ack(AckPacket::new_buf(
                         1,
                         connection_id,
