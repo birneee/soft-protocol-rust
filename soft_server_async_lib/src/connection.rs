@@ -14,7 +14,7 @@ use soft_shared_lib::{error, times};
 use soft_shared_lib::error::ErrorType;
 use crate::file_sandbox::FileSandbox;
 use soft_shared_lib::packet::err_packet::ErrPacket;
-use soft_shared_lib::soft_error_code::SoftErrorCode::{FileNotFound, InvalidOffset, Unknown};
+use soft_shared_lib::soft_error_code::SoftErrorCode::{FileNotFound, InvalidOffset, Unknown, ChecksumNotReady};
 use crate::server::FILE_READER_BUFFER_SIZE;
 use soft_shared_lib::packet::packet_buf::{PacketBuf, DataPacketBuf};
 use soft_shared_lib::error::ErrorType::{IOError, Eof};
@@ -83,7 +83,7 @@ impl Connection {
     /// received packets have to be passed to the packet_sender channel
     ///
     /// fails if request is invalid or file is not found
-    pub async fn new(connection_id: ConnectionId, req: &ReqPacket, src_addr: SocketAddr, socket: Arc<UdpSocket>, congestion_cache: Arc<CongestionCache>, checksum_cache: &ChecksumCache, file_sandbox: &FileSandbox) -> error::Result<Arc<Connection>> {
+    pub async fn new(connection_id: ConnectionId, req: &ReqPacket, src_addr: SocketAddr, socket: Arc<UdpSocket>, congestion_cache: Arc<CongestionCache>, checksum_cache: Arc<ChecksumCache>, file_sandbox: &FileSandbox) -> error::Result<Arc<Connection>> {
         let (packet_sender, packet_receiver) = tokio::sync::mpsc::channel(PACKET_CHANNEL_SIZE);
 
         let file = match file_sandbox.get_file(req.file_name()).await {
@@ -104,18 +104,16 @@ impl Connection {
             return Err(ErrorType::InvalidRequest);
         }
 
-        let mut reader = BufReader::with_capacity(FILE_READER_BUFFER_SIZE, file);
-
-        let checksum = match checksum_cache.get_checksum(req.file_name(), &mut reader).await
-        {
-            Ok(checksum) => checksum,
-            Err(error) => {
-                let err = ErrPacket::new_buf(Unknown, 0);
-                socket.send_to(err.buf(), src_addr).await?;
-                debug!("sent {} to {}", &err, src_addr);
-                return Err(error);
-            }
+        let checksum = if let Some(checksum) = checksum_cache.get_checksum(&req.file_name(), file.try_clone().await.unwrap()).await {
+            checksum
+        } else {
+            let err = ErrPacket::new_buf(ChecksumNotReady, 0);
+            socket.send_to(err.buf(), src_addr).await?;
+            debug!("sent {} to {}", &err, src_addr);
+            return Err(error::ErrorType::ChecksumNotReady);
         };
+
+        let mut reader = BufReader::with_capacity(FILE_READER_BUFFER_SIZE, file);
 
         // set file pointer to offset
         if let std::io::Result::Err(e) = reader.seek(SeekFrom::Start(req.offset())).await {

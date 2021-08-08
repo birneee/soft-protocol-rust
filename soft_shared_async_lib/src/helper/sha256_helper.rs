@@ -1,35 +1,22 @@
 use sha2::{Digest, Sha256};
 use soft_shared_lib::field_types::Checksum;
-use tokio::io::{BufReader, AsyncRead, AsyncReadExt};
+use tokio::io::{BufReader, AsyncReadExt};
 use tokio::fs::File;
 
-
+const BUFFER_SIZE: usize = 4096;
 
 pub async fn generate_checksum(
     reader: &mut BufReader<File>,
 ) -> Checksum {
-    let mut checksum: Checksum = [0; 32];
-    let mut sha256 = Sha256::new();
-
-    copy(reader, &mut sha256).await;
-    let checksum_value = sha256.finalize();
-
-    checksum.clone_from_slice(checksum_value.as_slice());
-
-    checksum
-}
-
-/// TODO optimize and return result
-async fn copy<R, W: std::io::Write>(reader: &mut R, writer: &mut W)
-where
-    R: AsyncRead + Unpin + ?Sized
-{
-    let mut buf = [0u8; 1000];
-    loop {
-        let size = reader.read(&mut buf).await.unwrap();
-        if size == 0 {
-            break;
-        }
-        writer.write(&buf[..size]).unwrap();
+    let mut buffer = [0u8; BUFFER_SIZE];
+    let mut hasher = Sha256::new();
+    let mut read:usize;
+    while (read = reader.read(&mut buffer[..]).await.unwrap(), read!=0).1 {
+        hasher.update(&buffer[..read]);
     }
+
+    let mut checksum = Checksum::default();
+    checksum.clone_from_slice(&hasher.finalize());
+
+    return checksum;
 }
