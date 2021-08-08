@@ -22,7 +22,7 @@ use soft_shared_lib::packet::ack_packet::AckPacket;
 use std::ops::Deref;
 use tokio::sync::{Mutex};
 use tokio::time::Instant;
-use soft_shared_lib::times::connection_timeout;
+use soft_shared_lib::times::{connection_timeout, INITIAL_RTT};
 use std::net::SocketAddr;
 use std::ops::Range;
 use soft_shared_lib::helper::range_helper::{compare_range, RangeCompare};
@@ -136,7 +136,7 @@ impl Connection {
             socket,
             packet_sender,
             congestion_cache,
-            connection_timeout: Mutex::new(Instant::now() + connection_timeout()),
+            connection_timeout: Mutex::new(Instant::now() + connection_timeout(INITIAL_RTT)),
             client_addr: Mutex::new(src_addr),
             last_forward_acknowledgement: Mutex::new(-1),
             last_packet_sent: Mutex::new(-1),
@@ -317,8 +317,9 @@ impl Connection {
     }
 
     async fn reset_connection_timeout(&self) {
+        let rtt = self.rtt().await;
         let mut connection_timeout = self.connection_timeout.lock().await;
-        *connection_timeout = Instant::now() + times::connection_timeout();
+        *connection_timeout = Instant::now() + times::connection_timeout(rtt);
     }
 
     /// expected ACK packets to receive
@@ -360,7 +361,7 @@ impl Connection {
         self.congestion_cache.reset_congestion_window(*self.client_addr.lock().await);
     }
 
-    async fn rtt(&self) -> Duration{
+    pub async fn rtt(&self) -> Duration{
         self.congestion_cache.current_rtt(*self.client_addr.lock().await)
     }
 
