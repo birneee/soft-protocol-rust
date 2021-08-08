@@ -11,7 +11,7 @@ pub fn data_packet_retransmission_timeout(rtt: Duration) -> Duration {
     return rtt * 2;
 }
 
-pub fn congestion_window_cache_timeout(rtt: Duration) -> Duration {
+pub fn path_cache_timeout(rtt: Duration) -> Duration {
     return rtt * 20;
 }
 
@@ -19,4 +19,4 @@ pub fn packet_loss_timeout(rtt: Duration) -> Duration {
     return rtt * 2;
 }
 
-pub fn connection_timeout() -> Duration { Duration::from_secs(60) }
+pub fn connection_timeout(rtt: Duration) -> Duration { rtt * 20 }

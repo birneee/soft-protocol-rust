@@ -9,7 +9,7 @@ use crate::congestion_cache::CongestionCache;
 use log::debug;
 use ttl_cache::TtlCache;
 use crate::config::MAX_SIMULTANEOUS_CONNECTIONS;
-use soft_shared_lib::times::connection_timeout;
+use soft_shared_lib::times::{connection_timeout, INITIAL_RTT};
 use std::time::Duration;
 
 pub struct ConnectionPool {
@@ -48,7 +48,7 @@ impl ConnectionPool {
         let mut guard = self.cache.lock().expect("failed to lock");
         let connection_id = Self::generate_connection_id(&*guard);
         let state = Arc::new(RwLock::new(ConnectionState::new(connection_id, src, max_packet_size, reader, congestion_cache)));
-        (*guard).insert(connection_id, state.clone(), connection_timeout());
+        (*guard).insert(connection_id, state.clone(), connection_timeout(INITIAL_RTT));
         self.connect_condvar.notify_all();
         return state;
     }
@@ -63,7 +63,7 @@ impl ConnectionPool {
         let mut cache = self.cache.lock().expect("failed to lock");
         if let Some(state) = cache.get(&connection_id) {
             let state = state.clone();
-            cache.insert(connection_id, state, connection_timeout());
+            cache.insert(connection_id, state, connection_timeout(INITIAL_RTT));
         }
     }
 
