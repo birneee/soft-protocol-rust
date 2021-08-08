@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
-const MAX_PACKET_SIZE: usize = 1200;
+const MAX_PACKET_SIZE: usize = 70;
 
 pub struct Client {
     state: Arc<ClientState>,
@@ -269,6 +269,7 @@ impl Client {
                 log::debug!("File Size: {}", p.file_size());
                 log::debug!("Checksum: {}", sha256_to_hex_string(p.checksum()));
                 send_buf = PacketBuf::Ack(AckPacket::new_buf(
+                    //TODO: Determine correct recv window and add recv windows management
                     1,
                     self.state.connection_id.load(SeqCst),
                     0,
@@ -370,17 +371,29 @@ impl Client {
                     eprintln!("received unsupported packet");
                 }
                 Ok(Data(p)) => {
-                    self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
-                    let _ = writer.write_all(p.data()).unwrap();
-                    let send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                        1,
-                        connection_id,
-                        p.sequence_number() + 1,
-                    ));
-                    let _ = self.state.socket.send(send_buf.buf());
+                    if p.sequence_number() == self.state.sequence_nr.load(SeqCst) {
+                        self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
+                        let _ = writer.write_all(p.data()).unwrap();
+                        let send_buf = PacketBuf::Ack(AckPacket::new_buf(
+                            1,
+                            connection_id,
+                            p.sequence_number() + 1,
+                        ));
+                        let _ = self.state.socket.send(send_buf.buf());
 
-                    progress = progress + p.data().len() as u64;
-                    self.state.progress.store(progress, SeqCst);
+                        progress = progress + p.data().len() as u64;
+                        self.state.progress.store(progress, SeqCst);
+                    }
+                    else {
+                        //TODO: Make retransmission decision RTT based
+                        log::debug!("Received duplicate data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
+                        let send_buf = PacketBuf::Ack(AckPacket::new_buf(
+                            1,
+                            connection_id,
+                            self.state.sequence_nr.load(SeqCst),
+                        ));
+                        let _ = self.state.socket.send(send_buf.buf());
+                    }
                 }
                 Ok(Packet::Err(e)) => self.handle_error(e),
                 _ => {}
@@ -397,3 +410,4 @@ impl Client {
         return self.state.progress.load(SeqCst) as f64 / self.state.filesize.load(SeqCst) as f64;
     }
 }
+
