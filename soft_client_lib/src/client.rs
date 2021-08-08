@@ -27,9 +27,11 @@ pub struct Client {
     filename: String,
     offset: Atomic<Offset>,
     initial_ack: Atomic<Option<Instant>>,
+    duplicate_timestamp: Atomic<Option<Instant>>
 }
 
 impl Client {
+    //TODO: Implement timeout for case of server unreachability
     pub fn init(socket: UdpSocket, filename: String) -> Client {
         let state = Arc::new(ClientState::new(socket));
         let download_buffer: File;
@@ -70,6 +72,7 @@ impl Client {
             filename,
             offset,
             initial_ack: Atomic::new(None),
+            duplicate_timestamp: Atomic::new(None)
         }
     }
 
@@ -281,6 +284,7 @@ impl Client {
 
                 // First Ack Sent. Store instance now.
                 self.initial_ack.store(Some(Instant::now()), SeqCst);
+                self.duplicate_timestamp.store(Some(Instant::now()), SeqCst);
 
                 log::debug!("Handshake successfully completed");
             }
@@ -383,16 +387,20 @@ impl Client {
 
                         progress = progress + p.data().len() as u64;
                         self.state.progress.store(progress, SeqCst);
+                        self.duplicate_timestamp.store(Option::Some(Instant::now()), SeqCst);
                     }
                     else {
-                        //TODO: Make retransmission decision RTT based
                         log::debug!("Received duplicate data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
-                        let send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                            1,
-                            connection_id,
-                            self.state.sequence_nr.load(SeqCst),
-                        ));
-                        let _ = self.state.socket.send(send_buf.buf());
+                        if self.duplicate_timestamp.load(SeqCst).unwrap().elapsed() > 3 * self.state.rtt.load(SeqCst).unwrap() {
+                            log::debug!("Exceeded 3 * RTT, resending ACK...");
+                            let send_buf = PacketBuf::Ack(AckPacket::new_buf(
+                                1,
+                                connection_id,
+                                self.state.sequence_nr.load(SeqCst),
+                            ));
+                            let _ = self.state.socket.send(send_buf.buf());
+                            self.duplicate_timestamp.store(Option::Some(Instant::now()), SeqCst);
+                        }
                     }
                 }
                 Ok(Packet::Err(e)) => self.handle_error(e),
