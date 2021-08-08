@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::time::{Duration};
-use soft_shared_lib::times::{congestion_window_cache_timeout, INITIAL_RTT};
+use soft_shared_lib::times::{path_cache_timeout, INITIAL_RTT};
 use std::sync::{Mutex};
 use log::debug;
 use ttl_cache::TtlCache;
@@ -54,7 +54,7 @@ impl CongestionCache {
         let mut cache = self.cache.lock().unwrap();
         let mut value = cache.get(&addr).map(|s| s.clone()).unwrap_or(CongestionState::new());
         f(&mut value);
-        let ttl = congestion_window_cache_timeout(value.current_rtt);
+        let ttl = path_cache_timeout(value.current_rtt);
         cache.insert(addr, value, ttl);
     }
 

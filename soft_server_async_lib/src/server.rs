@@ -9,7 +9,7 @@ use soft_shared_lib::field_types::{ConnectionId};
 use crate::connection::Connection;
 use tokio::sync::Mutex;
 use std::sync::{Arc};
-use soft_shared_lib::times::connection_timeout;
+use soft_shared_lib::times::{connection_timeout, INITIAL_RTT};
 use log::{info, debug};
 use std::net::SocketAddr;
 use rand::Rng;
@@ -88,16 +88,18 @@ impl Server {
                                 &file_sandbox,
                             ).await;
                             if let Ok(connection) = connection {
-                                connections.insert(connection_id, connection, connection_timeout());
+                                connections.insert(connection_id, connection, connection_timeout(INITIAL_RTT));
                             }
                         }
                     }
                     _ => {
-                        //TODO reset ttlcache
                         let connection_id = packet.connection_id_or_none().unwrap();
-                        let connections = connections.lock().await;
-                        if let Some(connection) = connections.get(&connection_id) {
+                        let mut connections = connections.lock().await;
+                        if let Some(connection) = connections.remove(&connection_id) {
                             let _ = connection.packet_sender.send((packet, src_addr)).await;
+                            // update ttl
+                            let rtt = connection.rtt().await;
+                            connections.insert(connection_id, connection, connection_timeout(rtt));
                         }
                     }
                 }
