@@ -13,7 +13,7 @@ use soft_shared_lib::{error, times};
 use soft_shared_lib::error::ErrorType;
 use crate::file_sandbox::FileSandbox;
 use soft_shared_lib::packet::err_packet::ErrPacket;
-use soft_shared_lib::soft_error_code::SoftErrorCode::{FileNotFound, InvalidOffset, Unknown, ChecksumNotReady};
+use soft_shared_lib::soft_error_code::SoftErrorCode::{FileNotFound, InvalidOffset, Internal, ChecksumNotReady};
 use crate::server::FILE_READER_BUFFER_SIZE;
 use soft_shared_lib::packet::packet_buf::{PacketBuf, DataPacketBuf};
 use soft_shared_lib::error::ErrorType::{IOError, Eof};
@@ -117,7 +117,7 @@ impl Connection {
 
         // set file pointer to offset
         if let std::io::Result::Err(e) = reader.seek(SeekFrom::Start(req.offset())).await {
-            let err = ErrPacket::new_buf(Unknown, 0);
+            let err = ErrPacket::new_buf(Internal, 0);
             socket.send_to(err.buf(), src_addr).await?;
             debug!("sent {} to {}", &err, src_addr);
             return Err(IOError(e));
@@ -195,7 +195,17 @@ impl Connection {
                         }
                     }
                 };
-                self.send_data().await;
+                match self.send_data().await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("failed to send data, caused by: {}", e);
+                        let client_addr = (*self.client_addr.lock().await).clone();
+                        let err = ErrPacket::new_buf(Internal, self.connection_id);
+                        self.socket.send_to(err.buf(), client_addr).await?;
+                        debug!("sent {} to {}", &err, client_addr);
+                        break;
+                    }
+                };
             }
             return Ok(());
         })
@@ -251,7 +261,7 @@ impl Connection {
     }
 
     /// send data packets until the effective window is 0 again
-    async fn send_data(&self) {
+    async fn send_data(&self) -> error::Result<()> {
         while self.effective_window().await > 0 {
             let sequence_number = (*self.last_packet_sent.lock().await + 1) as SequenceNumber;
             let mut data_send_buffer = self.data_send_buffer.lock().await;
@@ -269,9 +279,7 @@ impl Connection {
                                 break
                             }
                             _ => {
-                                //TODO handle error
-                                log::error!("file read error");
-                                break
+                                return Err(e);
                             }
                         }
 
@@ -292,6 +300,7 @@ impl Connection {
                 *data_send_instant_sample = (sequence_number as i128, Instant::now());
             }
         }
+        return Ok(());
     }
 
     /// Read next Data packet from file
@@ -301,7 +310,7 @@ impl Connection {
         let max_data_size = self.max_packet_size - (DataPacket::get_required_buffer_size_without_data() as u16);
         let mut tmp_buf = vec![0u8; max_data_size as usize];
         let mut reader = self.reader.lock().await;
-        return match reader.read(&mut tmp_buf).await {
+        return match reader.read_exact(&mut tmp_buf).await {
             Ok(size) if size == 0 => {
                 Err(ErrorType::Eof)
             }

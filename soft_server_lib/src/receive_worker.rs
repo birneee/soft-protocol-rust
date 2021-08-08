@@ -9,7 +9,7 @@ use std::net::{SocketAddr};
 use soft_shared_lib::field_types::MaxPacketSize;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use std::cmp::min;
-use soft_shared_lib::soft_error_code::SoftErrorCode::{UnsupportedVersion, FileNotFound, InvalidOffset, Unknown};
+use soft_shared_lib::soft_error_code::SoftErrorCode::{UnsupportedVersion, FileNotFound, InvalidOffset, Internal};
 use std::time::Instant;
 use soft_shared_lib::helper::range_helper::{compare_range, RangeCompare};
 use log::debug;
@@ -96,13 +96,13 @@ impl ReceiveWorker {
                     Ok(checksum) => checksum,
                     Err(error) => {
                         eprintln!("{}", error);
-                        return Some(PacketBuf::from(ErrPacket::new_buf(Unknown, 0)));
+                        return Some(PacketBuf::from(ErrPacket::new_buf(Internal, 0)));
                     }
                 };
                 // set file pointer to offset
                 if let Err(e) = reader.seek(SeekFrom::Start(p.offset())) {
                     eprintln!("{}", e);
-                    return Some(PacketBuf::from(ErrPacket::new_buf(Unknown, 0)));
+                    return Some(PacketBuf::from(ErrPacket::new_buf(Internal, 0)));
                 }
                 let connection_lock = state.connection_pool.add(
                     src.clone(),

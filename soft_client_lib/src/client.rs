@@ -168,7 +168,7 @@ impl Client {
     fn handle_error(&self, e: &mut ErrPacket) {
         match e.error_code() {
             soft_shared_lib::soft_error_code::SoftErrorCode::Stop => todo!(),
-            soft_shared_lib::soft_error_code::SoftErrorCode::Unknown => {
+            soft_shared_lib::soft_error_code::SoftErrorCode::Internal => {
                 log::error!("Unknown Error Occoured, aborting");
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::FileNotFound => {

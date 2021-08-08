@@ -34,11 +34,11 @@ pub struct Server {
 
 impl Server {
 
-    pub fn start<A: std::net::ToSocketAddrs>(addr: A, served_dir: PathBuf, p_loss: f64, q_loss: f64) -> Server {
+    pub fn start<A: std::net::ToSocketAddrs>(addr: A, served_dir: PathBuf, first_loss_probability: f64, repeated_loss_probability: f64) -> Server {
         let runtime = Runtime::new().unwrap();
 
         let addr: Vec<SocketAddr> = addr.to_socket_addrs().unwrap().collect();
-        let socket = runtime.block_on(async { LossSimulationUdpSocket::bind(addr.as_slice(), p_loss, q_loss).await }).unwrap();
+        let socket = runtime.block_on(async { LossSimulationUdpSocket::bind(addr.as_slice(), first_loss_probability, repeated_loss_probability).await }).unwrap();
 
         let server = Server {
             local_addr: socket.local_addr().unwrap(),
