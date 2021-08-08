@@ -27,9 +27,11 @@ pub struct Client {
     filename: String,
     offset: Atomic<Offset>,
     initial_ack: Atomic<Option<Instant>>,
+    ack_timeout: Atomic<Option<Instant>>
 }
 
 impl Client {
+    //TODO: Implement timeout for case of server unreachability
     pub fn init(socket: UdpSocket, filename: String) -> Client {
         let state = Arc::new(ClientState::new(socket));
         let download_buffer: File;
@@ -40,7 +42,7 @@ impl Client {
 
         if Path::new(&filename).exists() {
             log::info!("File exists: {}", &filename);
-            let checksum = Client::get_checksum(&filename);
+            let checksum = Client::generate_file_checksum(&filename);
 
             if let Some(checksum) = checksum {
                 log::debug!("Checksum file found for {}, resuming download.", &filename);
@@ -70,6 +72,7 @@ impl Client {
             filename,
             offset,
             initial_ack: Atomic::new(None),
+            ack_timeout: Atomic::new(None)
         }
     }
 
@@ -79,7 +82,7 @@ impl Client {
     ///
     /// # Arguments
     /// * `filename` - The filename to retrieve checksum for
-    fn get_checksum(filename: &str) -> Option<Checksum> {
+    fn generate_file_checksum(filename: &str) -> Option<Checksum> {
         if Path::new(format!("{}.checksum", &filename).as_str()).exists() {
             let mut checksum: Checksum = [0; 32];
             let mut checksum_file = OpenOptions::new()
@@ -269,6 +272,7 @@ impl Client {
                 log::debug!("File Size: {}", p.file_size());
                 log::debug!("Checksum: {}", sha256_to_hex_string(p.checksum()));
                 send_buf = PacketBuf::Ack(AckPacket::new_buf(
+                    //TODO: Determine correct recv window and add recv windows management
                     1,
                     self.state.connection_id.load(SeqCst),
                     0,
@@ -280,6 +284,7 @@ impl Client {
 
                 // First Ack Sent. Store instance now.
                 self.initial_ack.store(Some(Instant::now()), SeqCst);
+                self.ack_timeout.store(Some(Instant::now()), SeqCst);
 
                 log::debug!("Handshake successfully completed");
             }
@@ -370,20 +375,36 @@ impl Client {
                     eprintln!("received unsupported packet");
                 }
                 Ok(Data(p)) => {
-                    self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
-                    let _ = writer.write_all(p.data()).unwrap();
-                    let send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                        1,
-                        connection_id,
-                        p.sequence_number() + 1,
-                    ));
-                    let _ = self.state.socket.send(send_buf.buf());
+                    if p.sequence_number() == self.state.sequence_nr.load(SeqCst) {
+                        self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
+                        let _ = writer.write_all(p.data()).unwrap();
+                        let send_buf = PacketBuf::Ack(AckPacket::new_buf(
+                            1,
+                            connection_id,
+                            p.sequence_number() + 1,
+                        ));
+                        let _ = self.state.socket.send(send_buf.buf());
 
-                    progress = progress + p.data().len() as u64;
-                    self.state.progress.store(progress, SeqCst);
+                        progress = progress + p.data().len() as u64;
+                        self.state.progress.store(progress, SeqCst);
+                        self.ack_timeout.store(Option::Some(Instant::now()), SeqCst);
+                    }
+                    else {
+                        log::debug!("Received duplicate data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
+                    }
                 }
                 Ok(Packet::Err(e)) => self.handle_error(e),
                 _ => {}
+            }
+            if self.ack_timeout.load(SeqCst).unwrap().elapsed() > 3 * self.state.rtt.load(SeqCst).unwrap() {
+                log::debug!("Exceeded 3 * RTT, resending ACK...");
+                let send_buf = PacketBuf::Ack(AckPacket::new_buf(
+                    1,
+                    connection_id,
+                    self.state.sequence_nr.load(SeqCst),
+                ));
+                let _ = self.state.socket.send(send_buf.buf());
+                self.ack_timeout.store(Option::Some(Instant::now()), SeqCst);
             }
         }
         return;
@@ -397,3 +418,4 @@ impl Client {
         return self.state.progress.load(SeqCst) as f64 / self.state.filesize.load(SeqCst) as f64;
     }
 }
+
