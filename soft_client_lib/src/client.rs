@@ -25,16 +25,18 @@ pub struct Client {
     state: Arc<ClientState>,
     filename: String,
     offset: Atomic<Offset>,
+    migration: u8,
     initial_ack: Atomic<Option<Instant>>,
     ack_timeout: Atomic<Option<Instant>>
 }
 
 impl Client {
     //TODO: Implement timeout for case of server unreachability
-    pub fn init(socket: UdpSocket, filename: String) -> Client {
+    pub fn init(socket: UdpSocket, filename: String, migration: u8) -> Client {
         let state = Arc::new(ClientState::new(socket));
         let download_buffer: File;
         let offset = Atomic::new(0);
+        let migration = migration;
 
         log::info!("Creating client to get file {}", filename);
         state.state_type.store(ClientStateType::Preparing, SeqCst);
@@ -70,6 +72,7 @@ impl Client {
             state,
             filename,
             offset,
+            migration,
             initial_ack: Atomic::new(None),
             ack_timeout: Atomic::new(None)
         }

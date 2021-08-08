@@ -59,6 +59,15 @@ fn main() {
                 .help("client prints execution details")
                 .takes_value(false),
         )
+        .arg(
+            Arg::with_name("migrate")
+                .short("m")
+                .long("migrate")
+                .value_name("MIGRATE")
+                .help("specify the migration interval")
+                .takes_value(true)
+                .default_value("0")
+        )
         .get_matches();
 
     let host = matches
@@ -71,7 +80,14 @@ fn main() {
         .unwrap()
         .parse::<u16>()
         .expect("invalid port");
-    let filenames = matches.values_of("file").unwrap();
+    let filenames = matches
+        .values_of("file")
+        .unwrap();
+    let migration = matches
+        .value_of("migrate")
+        .unwrap()
+        .parse::<u8>()
+        .expect("invalid migration period");
 
     if matches.is_present("verbose") {
         env_logger::builder()
@@ -87,7 +103,7 @@ fn main() {
     let socket = setup_udp_socket(host, port);
 
     for filename in filenames {
-        download_file(socket.try_clone().unwrap(), filename);
+        download_file(socket.try_clone().unwrap(), filename, migration);
     }
 }
 
@@ -119,10 +135,11 @@ fn setup_udp_socket(ip: IpAddr, port: u16) -> UdpSocket {
 }
 
 
-fn download_file(socket: UdpSocket, filename: &str) {
+fn download_file(socket: UdpSocket, filename: &str, migration: u8) {
     let client = Arc::new(Client::init(
         socket,
         filename.to_string(),
+        migration,
     ));
     if client.state() == ClientStateType::Downloaded {
         return;
