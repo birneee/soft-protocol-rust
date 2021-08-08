@@ -79,7 +79,7 @@ fn main() {
             .init();
     } else {
         env_logger::builder()
-            .filter_level(LevelFilter::Error)
+            .filter_level(LevelFilter::Info)
             .init();
     }
 
@@ -188,6 +188,7 @@ fn download_file(socket: UdpSocket, filename: &str) {
                 pb.finish()
             }
         }
+        thread::sleep(Duration::from_millis(10));
         if stopped {
             break;
         }

@@ -1,6 +1,5 @@
 use crate::client_state::{ClientState, ClientStateType};
 use atomic::Atomic;
-use log::info;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use soft_shared_lib::field_types::{Checksum, Offset};
 use soft_shared_lib::helper::sha256_helper::{generate_checksum, sha256_to_hex_string};
@@ -45,7 +44,7 @@ impl Client {
             let checksum = Client::generate_file_checksum(&filename);
 
             if let Some(checksum) = checksum {
-                log::debug!("Checksum file found for {}, resuming download.", &filename);
+                log::info!("Checksum file found for {}, resuming download.", &filename);
 
                 download_buffer = OpenOptions::new()
                     .read(true)
@@ -54,7 +53,7 @@ impl Client {
                 let metadata = download_buffer.metadata().expect("file error occoured");
                 let current_file_size = metadata.size();
 
-                log::debug!("File Offset for resumption: {}", current_file_size);
+                log::info!("File Offset for resumption: {}", current_file_size);
 
                 offset.store(current_file_size, SeqCst);
                 state.checksum.store(Some(checksum), SeqCst);
@@ -146,7 +145,7 @@ impl Client {
         if self.state.state_type.load(SeqCst) == ClientStateType::Error {
             return;
         }
-        log::debug!("Cleaning checksum file for {}", self.filename);
+        log::info!("Cleaning checksum file for {}", self.filename);
         Client::clean_checksum(&self.filename);
     }
 
@@ -169,7 +168,7 @@ impl Client {
         match e.error_code() {
             soft_shared_lib::soft_error_code::SoftErrorCode::Stop => todo!(),
             soft_shared_lib::soft_error_code::SoftErrorCode::Unknown => {
-                log::error!("Unknown Error Occoured, aborting");
+                log::error!("Unknown Error Occured, aborting");
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::FileNotFound => {
                 log::error!(
@@ -267,10 +266,10 @@ impl Client {
                 self.state.filesize.store(p.file_size(), SeqCst);
                 self.state.checksum.store(Some(p.checksum()), SeqCst);
 
-                log::debug!("New Connection created");
-                log::debug!("Connection ID: {}", p.connection_id());
-                log::debug!("File Size: {}", p.file_size());
-                log::debug!("Checksum: {}", sha256_to_hex_string(p.checksum()));
+                log::info!("New Connection created");
+                log::info!("Connection ID: {}", p.connection_id());
+                log::info!("File Size: {}", p.file_size());
+                log::info!("Checksum: {}", sha256_to_hex_string(p.checksum()));
                 send_buf = PacketBuf::Ack(AckPacket::new_buf(
                     //TODO: Determine correct recv window and add recv windows management
                     1,
@@ -286,7 +285,7 @@ impl Client {
                 self.initial_ack.store(Some(Instant::now()), SeqCst);
                 self.ack_timeout.store(Some(Instant::now()), SeqCst);
 
-                log::debug!("Handshake successfully completed");
+                log::info!("Handshake successfully completed");
             }
             Ok(Packet::Err(error_packet)) => {
                 self.handle_error(error_packet);
@@ -315,7 +314,7 @@ impl Client {
         let checksum = generate_checksum(&mut reader);
 
         if self.state.checksum.load(SeqCst).eq(&Some(checksum)) {
-            info!(
+            log::info!(
                 "Checksum validated {}, file downloaded",
                 sha256_to_hex_string(checksum)
             );
@@ -366,7 +365,7 @@ impl Client {
                     SeqCst,
                 );
                 
-                log::debug!("Initial RTT measurement: {:?}", self.state.rtt.load(SeqCst).unwrap());
+                log::info!("Initial RTT measurement: {:?}", self.state.rtt.load(SeqCst).unwrap());
             }
             let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
 
@@ -375,14 +374,25 @@ impl Client {
                     eprintln!("received unsupported packet");
                 }
                 Ok(Data(p)) => {
+                    log::debug!("received Data [connection_id: {:?}, sequence_number: {:?}, data: {:?}] from {:?}",
+                        p.connection_id(),
+                        p.sequence_number(),
+                        p.packet_size(),
+                        self.state.socket.peer_addr()
+                    );
                     if p.sequence_number() == self.state.sequence_nr.load(SeqCst) {
                         self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
                         let _ = writer.write_all(p.data()).unwrap();
                         let send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                            1,
+                            100,
                             connection_id,
                             p.sequence_number() + 1,
                         ));
+                        log::debug!("sending Ack [connection_id: {:?}, sequence_number: {:?}] to {:?}",
+                        connection_id,
+                        self.state.sequence_nr.load(SeqCst),
+                        self.state.socket.peer_addr()
+                    );
                         let _ = self.state.socket.send(send_buf.buf());
 
                         progress = progress + p.data().len() as u64;
@@ -397,9 +407,9 @@ impl Client {
                 _ => {}
             }
             if self.ack_timeout.load(SeqCst).unwrap().elapsed() > 3 * self.state.rtt.load(SeqCst).unwrap() {
-                log::debug!("Exceeded 3 * RTT, resending ACK...");
+                log::debug!("Exceeded 3 * RTT, resending ACK [sequence_number: {:?}]", self.state.sequence_nr.load(SeqCst));
                 let send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                    1,
+                    100,
                     connection_id,
                     self.state.sequence_nr.load(SeqCst),
                 ));
