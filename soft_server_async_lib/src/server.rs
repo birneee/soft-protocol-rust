@@ -45,7 +45,7 @@ impl Server {
             runtime,
             connections: Arc::new(Mutex::new(TtlCache::new(MAX_SIMULTANEOUS_CONNECTIONS))),
             file_sandbox: Arc::new(FileSandbox::new(served_dir.clone())),
-            checksum_cache: Arc::new(ChecksumCache::new()),
+            checksum_cache: ChecksumCache::new(),
             congestion_cache: Arc::new(CongestionCache::new()),
         };
 
@@ -84,7 +84,7 @@ impl Server {
                                 src_addr,
                                 socket.clone(),
                                 congestion_cache.clone(),
-                                &checksum_cache,
+                                checksum_cache.clone(),
                                 &file_sandbox,
                             ).await;
                             if let Ok(connection) = connection {
@@ -135,7 +135,7 @@ impl Drop for Server {
 mod tests {
     use crate::server::Server;
     use tempdir::TempDir;
-    use std::net::UdpSocket;
+    use std::net::{UdpSocket, SocketAddr};
     use std::time::Duration;
     use std::fs::File;
     use std::io::{Write, ErrorKind};
@@ -148,8 +148,9 @@ mod tests {
     use soft_shared_lib::packet::general_packet::GeneralPacket;
     use std::convert::TryInto;
     use soft_shared_lib::general::byte_view::ByteView;
-    use soft_shared_lib::packet::packet_buf::{AccPacketBuf, DataPacketBuf};
+    use soft_shared_lib::packet::packet_buf::{AccPacketBuf, DataPacketBuf, PacketBuf};
     use soft_shared_lib::packet::ack_packet::AckPacket;
+    use soft_shared_lib::soft_error_code::SoftErrorCode;
 
     /// add some methods to Sever for testing
     impl Server {
@@ -172,6 +173,23 @@ mod tests {
         }
     }
 
+    fn retry_req_until_checksum_ready(client_socket: &UdpSocket, req: &ReqPacket, server_addr: SocketAddr) -> AccPacketBuf {
+        loop {
+            client_socket.send_to(req.buf(), server_addr).unwrap();
+            match receive(&client_socket).unwrap().0 {
+                PacketBuf::Acc(acc) => {
+                    break acc
+                }
+                PacketBuf::Err(e) if e.error_code() == SoftErrorCode::ChecksumNotReady => {
+                    continue
+                }
+                _ => {
+                    panic!("unexpected packet");
+                }
+            }
+        }
+    }
+
     #[test_case("test", 100; "in one data packet")]
     #[test_case("test", 18; "in two data packet")]
     #[test_case("test", 17; "in four data packet")]
@@ -191,11 +209,10 @@ mod tests {
         let server = Server::start("127.0.0.1:0", served_dir.into_path(), 0.0, 0.0);
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
-        // send Req
+        // create Req
         let req_packet = ReqPacket::new_buf(max_packet_size, FILE_NAME, 0);
-        client_socket.send_to(req_packet.buf(), server.local_addr()).unwrap();
         // receive Acc
-        let acc_packet: AccPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
+        let acc_packet = retry_req_until_checksum_ready(&client_socket, &req_packet, server.local_addr);
         let connection_id = acc_packet.connection_id();
         let received_file_size = acc_packet.file_size();
         let checksum = acc_packet.checksum();
@@ -269,18 +286,14 @@ mod tests {
         client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
         let mut received_file_content = Vec::<u8>::with_capacity(FILE_CONTENT.len());
 
-        // send Req
-        client_socket.send_to(
-            &ReqPacket::new_buf(
-                MAX_PACKET_SIZE,
-                "hello.txt",
-                0
-            ).buf(),
-            server.local_addr()
-        ).unwrap();
-
+        // create Req
+        let req_packet = ReqPacket::new_buf(
+            MAX_PACKET_SIZE,
+            "hello.txt",
+            0
+        );
         // receive Acc
-        let acc_packet: AccPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
+        let acc_packet = retry_req_until_checksum_ready(&client_socket, &req_packet, server.local_addr);
         let connection_id = acc_packet.connection_id();
         drop(acc_packet);
 
@@ -345,18 +358,15 @@ mod tests {
         client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
         let mut received_file_content = Vec::<u8>::with_capacity(FILE_CONTENT.len());
 
-        // send Req
-        client_socket.send_to(
-            &ReqPacket::new_buf(
-                MAX_PACKET_SIZE,
-                "hello.txt",
-                0
-            ).buf(),
-            server.local_addr()
-        ).unwrap();
+        // create Req
+        let req_packet = ReqPacket::new_buf(
+            MAX_PACKET_SIZE,
+            "hello.txt",
+            0
+        );
 
         // receive Acc
-        let acc_packet: AccPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
+        let acc_packet: AccPacketBuf = retry_req_until_checksum_ready(&client_socket, &req_packet, server.local_addr);
         let connection_id = acc_packet.connection_id();
         drop(acc_packet);
 
@@ -418,18 +428,15 @@ mod tests {
             let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
             client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
 
-            // send Req
-            client_socket.send_to(
-                &ReqPacket::new_buf(
-                    MAX_PACKET_SIZE,
-                    FILE_NAME,
-                    received_file_content.len() as Offset,
-                ).buf(),
-                server.local_addr(),
-            ).unwrap();
+            // create Req
+            let req_packet = ReqPacket::new_buf(
+                MAX_PACKET_SIZE,
+                FILE_NAME,
+                received_file_content.len() as Offset,
+            );
 
             // receive Acc
-            let acc_packet: AccPacketBuf = receive(&client_socket).unwrap().0.try_into().unwrap();
+            let acc_packet: AccPacketBuf = retry_req_until_checksum_ready(&client_socket, &req_packet, server.local_addr);
             let connection_id = acc_packet.connection_id();
             assert_eq!(sha256_from_bytes(FILE_CONTENT.as_bytes()), acc_packet.checksum());
 
