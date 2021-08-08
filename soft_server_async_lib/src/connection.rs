@@ -261,6 +261,8 @@ impl Connection {
     }
 
     /// send data packets until the effective window is 0 again
+    ///
+    /// return Error if connection should close and send Err packet
     async fn send_data(&self) -> error::Result<()> {
         while self.effective_window().await > 0 {
             let sequence_number = (*self.last_packet_sent.lock().await + 1) as SequenceNumber;
