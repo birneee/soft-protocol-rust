@@ -310,7 +310,7 @@ impl Connection {
         let max_data_size = self.max_packet_size - (DataPacket::get_required_buffer_size_without_data() as u16);
         let mut tmp_buf = vec![0u8; max_data_size as usize];
         let mut reader = self.reader.lock().await;
-        return match reader.read_exact(&mut tmp_buf).await {
+        return match reader.read(&mut tmp_buf).await {
             Ok(size) if size == 0 => {
                 Err(ErrorType::Eof)
             }
