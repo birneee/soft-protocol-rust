@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
-const MAX_PACKET_SIZE: usize = 70;
+const MAX_PACKET_SIZE: usize = 1200;
 
 pub struct Client {
     state: Arc<ClientState>,
