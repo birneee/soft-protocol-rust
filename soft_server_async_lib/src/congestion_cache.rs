@@ -5,6 +5,7 @@ use std::sync::{Mutex};
 use log::debug;
 use ttl_cache::TtlCache;
 use crate::server::MAX_SIMULTANEOUS_CONNECTIONS;
+use std::cmp::max;
 
 pub type CongestionWindow = u16; // same size as receive window
 
@@ -15,6 +16,7 @@ const CONGESTION_ALPHA: f64 = 1.0;
 /// factor for decreasing the congestion window
 const CONGESTION_BETA: f64 = 0.5;
 const RTT_MOVING_AVERAGE_GAMMA: f64 = 0.9;
+const MIN_RTT: Duration = Duration::from_micros(1);
 
 #[derive(PartialEq, Clone)]
 pub struct CongestionState {
@@ -64,9 +66,12 @@ impl CongestionCache {
     pub fn apply_rtt_sample(&self, addr: SocketAddr, rtt_sample: Duration) {
         self.update(addr, |congestion_state| {
             if *congestion_state == CongestionState::initial() {
-                congestion_state.current_rtt = rtt_sample;
+                congestion_state.current_rtt = max(rtt_sample, MIN_RTT);
             } else {
-                congestion_state.current_rtt = congestion_state.current_rtt.mul_f64(RTT_MOVING_AVERAGE_GAMMA) + rtt_sample.mul_f64(1.0 - RTT_MOVING_AVERAGE_GAMMA);
+                congestion_state.current_rtt = max(
+                    congestion_state.current_rtt.mul_f64(RTT_MOVING_AVERAGE_GAMMA) + rtt_sample.mul_f64(1.0 - RTT_MOVING_AVERAGE_GAMMA),
+                    MIN_RTT
+                );
             }
             debug!("updated rtt of {} to {:?}", addr, congestion_state.current_rtt);
         });
@@ -123,10 +128,12 @@ impl CongestionCache {
     /// should be called on timeouts
     pub fn reset_congestion_window(&self, addr: SocketAddr){
         self.update(addr, |value| {
-            value.congestion_avoidance_threshold =  value.congestion_window * CONGESTION_BETA;
-            value.congestion_window = INITIAL_CONGESTION_WINDOW;
-            debug!("enter slow start phase");
-            debug!("reset congestion window of {} to {}", addr, value.congestion_window);
+            if !value.is_slow_start() {
+                value.congestion_avoidance_threshold = value.congestion_window * CONGESTION_BETA;
+                value.congestion_window = INITIAL_CONGESTION_WINDOW;
+                debug!("enter slow start phase");
+                debug!("reset congestion window of {} to {}", addr, value.congestion_window);
+            }
         });
     }
 

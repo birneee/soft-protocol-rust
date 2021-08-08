@@ -17,6 +17,7 @@ pub enum ErrorType {
     WrongPacketType,
     Eof,
     InvalidRequest,
+    ChecksumNotReady,
 }
 
 impl Display for ErrorType {
@@ -52,6 +53,10 @@ impl Display for ErrorType {
             ErrorType::InvalidRequest => write!(
                 fmt,
                 "invalid request"
+            ),
+            ErrorType::ChecksumNotReady => write!(
+                fmt,
+                "checksum not ready"
             )
         }
     }
