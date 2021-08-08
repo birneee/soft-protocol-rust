@@ -1,4 +1,3 @@
-use tokio::net::{UdpSocket};
 use std::path::{PathBuf};
 use tokio::runtime::Runtime;
 use std::time::Duration;
@@ -19,12 +18,13 @@ use crate::congestion_cache::CongestionCache;
 use core::mem;
 use tokio::task::JoinHandle;
 use std::ops::Deref;
+use soft_shared_async_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
 
 pub const MAX_SIMULTANEOUS_CONNECTIONS: usize = 100;
 pub const FILE_READER_BUFFER_SIZE: usize = 2usize.pow(16);
 
 pub struct Server {
-    local_addr: std::net::SocketAddr,
+    local_addr: SocketAddr,
     runtime: Runtime,
     connections: Arc<Mutex<TtlCache<ConnectionId, Arc<Connection>>>>,
     file_sandbox: Arc<FileSandbox>,
@@ -34,11 +34,11 @@ pub struct Server {
 
 impl Server {
 
-    pub fn start<A: std::net::ToSocketAddrs>(addr: A, served_dir: PathBuf) -> Server {
+    pub fn start<A: std::net::ToSocketAddrs>(addr: A, served_dir: PathBuf, p_loss: f64, q_loss: f64) -> Server {
         let runtime = Runtime::new().unwrap();
 
         let addr: Vec<SocketAddr> = addr.to_socket_addrs().unwrap().collect();
-        let socket = runtime.block_on(async { UdpSocket::bind(addr.as_slice()).await }).unwrap();
+        let socket = runtime.block_on(async { LossSimulationUdpSocket::bind(addr.as_slice(), p_loss, q_loss).await }).unwrap();
 
         let server = Server {
             local_addr: socket.local_addr().unwrap(),
@@ -60,7 +60,7 @@ impl Server {
         server
     }
 
-    fn spawn(&self, socket: tokio::net::UdpSocket) -> JoinHandle<()> {
+    fn spawn(&self, socket: LossSimulationUdpSocket) -> JoinHandle<()> {
         let connections = self.connections.clone();
         let congestion_cache = self.congestion_cache.clone();
         let checksum_cache = self.checksum_cache.clone();
@@ -188,7 +188,7 @@ mod tests {
         let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
         let file_size = file_content.len() as FileSize;
         file.write(file_content.as_bytes()).unwrap();
-        let server = Server::start("127.0.0.1:0", served_dir.into_path());
+        let server = Server::start("127.0.0.1:0", served_dir.into_path(), 0.0, 0.0);
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
         // send Req
@@ -263,7 +263,7 @@ mod tests {
         let served_dir = TempDir::new("soft_test").unwrap();
         let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
         file.write(FILE_CONTENT.as_bytes()).unwrap();
-        let server = Server::start("127.0.0.1:0", served_dir.into_path());
+        let server = Server::start("127.0.0.1:0", served_dir.into_path(), 0.0, 0.0);
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
@@ -339,7 +339,7 @@ mod tests {
         let served_dir = TempDir::new("soft_test").unwrap();
         let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
         file.write(FILE_CONTENT.as_bytes()).unwrap();
-        let server = Server::start("127.0.0.1:0", served_dir.into_path());
+        let server = Server::start("127.0.0.1:0", served_dir.into_path(), 0.0, 0.0);
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         client_socket.set_read_timeout(Some(RECEIVE_TIMEOUT)).unwrap();
@@ -408,7 +408,7 @@ mod tests {
         let served_dir = TempDir::new("soft_test").unwrap();
         let mut file = File::create(served_dir.path().join(FILE_NAME)).unwrap();
         file.write(FILE_CONTENT.as_bytes()).unwrap();
-        let server = Server::start("127.0.0.1:0", served_dir.into_path());
+        let server = Server::start("127.0.0.1:0", served_dir.into_path(), 0.0, 0.0);
 
         let mut received_file_content = Vec::<u8>::with_capacity(FILE_CONTENT.len());
         let mut connection_count = 0;

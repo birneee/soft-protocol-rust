@@ -2,7 +2,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::Receiver;
 use log::{debug};
 use std::sync::Arc;
-use tokio::net::UdpSocket;
 use soft_shared_lib::packet::acc_packet::AccPacket;
 use soft_shared_lib::field_types::{ConnectionId, SequenceNumber, MaxPacketSize};
 use soft_shared_lib::general::byte_view::ByteView;
@@ -37,6 +36,7 @@ use soft_shared_lib::packet::req_packet::ReqPacket;
 use soft_shared_lib::constants::SOFT_MAX_PACKET_SIZE;
 use std::sync::atomic::AtomicU16;
 use std::sync::atomic::Ordering::SeqCst;
+use soft_shared_async_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
 
 const PACKET_CHANNEL_SIZE: usize = 10;
 
@@ -49,7 +49,7 @@ type InternalSequenceNumber = i128;
 
 pub struct Connection {
     pub connection_id: ConnectionId,
-    pub socket: Arc<UdpSocket>,
+    pub socket: Arc<LossSimulationUdpSocket>,
     pub packet_sender: Sender<(PacketBuf, SocketAddr)>,
     congestion_cache: Arc<CongestionCache>,
     connection_timeout: Mutex<Instant>,
@@ -83,7 +83,7 @@ impl Connection {
     /// received packets have to be passed to the packet_sender channel
     ///
     /// fails if request is invalid or file is not found
-    pub async fn new(connection_id: ConnectionId, req: &ReqPacket, src_addr: SocketAddr, socket: Arc<UdpSocket>, congestion_cache: Arc<CongestionCache>, checksum_cache: &ChecksumCache, file_sandbox: &FileSandbox) -> error::Result<Arc<Connection>> {
+    pub async fn new(connection_id: ConnectionId, req: &ReqPacket, src_addr: SocketAddr, socket: Arc<LossSimulationUdpSocket>, congestion_cache: Arc<CongestionCache>, checksum_cache: &ChecksumCache, file_sandbox: &FileSandbox) -> error::Result<Arc<Connection>> {
         let (packet_sender, packet_receiver) = tokio::sync::mpsc::channel(PACKET_CHANNEL_SIZE);
 
         let file = match file_sandbox.get_file(req.file_name()).await {
