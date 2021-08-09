@@ -1,7 +1,7 @@
 #[derive(Debug, Copy, Clone, PartialEq, FromPrimitive)]
 pub enum SoftErrorCode {
     Stop = 0,
-    Unknown = 1,
+    Internal = 1,
     FileNotFound = 2,
     BadPacket = 3,
     ChecksumNotReady = 4,

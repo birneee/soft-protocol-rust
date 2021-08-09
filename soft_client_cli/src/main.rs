@@ -60,6 +60,14 @@ fn main() {
                 .takes_value(false),
         )
         .arg(
+            Arg::with_name("trace")
+                .short("c")
+                .long("trace")
+                .value_name("TRACE")
+                .help("client prints execution details and packet traces")
+                .takes_value(false),
+        )
+        .arg(
             Arg::with_name("migrate")
                 .short("m")
                 .long("migrate")
@@ -93,6 +101,10 @@ fn main() {
         env_logger::builder()
             .filter_level(LevelFilter::Debug)
             .init();
+    } else if matches.is_present("trace") {
+        env_logger::builder()
+            .filter_level(LevelFilter::Trace)
+            .init();
     } else {
         env_logger::builder()
             .filter_level(LevelFilter::Info)
@@ -107,17 +119,18 @@ fn main() {
     }
 }
 
-fn setup_progress_bar(offset: u64) -> ProgressBar<Stdout> {
+fn setup_progress_bar() -> ProgressBar<Stdout> {
     let mut pb = ProgressBar::new(100);
     pb.tick_format("\\|/-");
     pb.format("|#--|");
     pb.show_tick = true;
-    pb.show_speed = false;
+    pb.show_speed = true;
     pb.show_percent = true;
     pb.show_counter = false;
     pb.show_time_left = false;
     pb.set_max_refresh_rate(Some(Duration::from_millis(60)));
-    pb.set(offset);
+    pb.set_width(Some(100));
+    pb.set_units(pbr::Units::Bytes);
 
     pb
 }
@@ -125,8 +138,6 @@ fn setup_progress_bar(offset: u64) -> ProgressBar<Stdout> {
 fn setup_udp_socket(ip: IpAddr, port: u16) -> UdpSocket {
     let address = SocketAddr::new(ip, port);
     let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
-    // Read timeout is dependant on the number of hops for the packet.
-    // From india to Germany, i need a long timeout for packets to reach me.
     socket
         .set_read_timeout(Some(Duration::from_secs(10)))
         .expect("Unable to set read timeout for socket");
@@ -161,7 +172,7 @@ fn download_file(socket: UdpSocket, filename: &str, migration: u8) {
     let mut current_state: ClientStateType = Preparing;
     let mut stopped = false;
 
-    let mut pb = setup_progress_bar((client.progress() * 100.00) as u64);
+    let mut pb = setup_progress_bar();
     loop {
         match client.state() {
             Preparing => {}
@@ -174,21 +185,19 @@ fn download_file(socket: UdpSocket, filename: &str, migration: u8) {
                 pb.tick();
             }
             Downloading => {
-                if current_state == Handshaking {
+                // Handshaking can be very fast sometimes.
+                if current_state == Handshaking || current_state == Preparing {
+                    pb.total = client.file_size();
                     pb.message(format!("{} -> Downloading: ", &filename).as_str());
                     current_state = Downloading;
                 }
-                let percentage = client.progress();
-                pb.set((percentage * 100.00) as u64);
+                pb.set(client.progress());
                 pb.tick();
-                //todo!("Build progress bar from percentage");
-                //println!("Downloading {}", (percentage * 100.0) as u64);
             }
             Validating => {
                 if current_state == Downloading {
                     pb.message(format!("{} -> Validating: ", &filename).as_str());
                     current_state = Validating;
-                    pb.set(100);
                 }
                 pb.tick();
             }
@@ -205,10 +214,10 @@ fn download_file(socket: UdpSocket, filename: &str, migration: u8) {
                 pb.finish()
             }
         }
-        thread::sleep(Duration::from_millis(10));
         if stopped {
             break;
         }
+        thread::sleep(Duration::from_millis(500));
     }
     handle.join().unwrap();
 }

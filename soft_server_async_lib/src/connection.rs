@@ -2,7 +2,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::Receiver;
 use log::{debug};
 use std::sync::Arc;
-use tokio::net::UdpSocket;
 use soft_shared_lib::packet::acc_packet::AccPacket;
 use soft_shared_lib::field_types::{ConnectionId, SequenceNumber, MaxPacketSize};
 use soft_shared_lib::general::byte_view::ByteView;
@@ -14,7 +13,7 @@ use soft_shared_lib::{error, times};
 use soft_shared_lib::error::ErrorType;
 use crate::file_sandbox::FileSandbox;
 use soft_shared_lib::packet::err_packet::ErrPacket;
-use soft_shared_lib::soft_error_code::SoftErrorCode::{FileNotFound, InvalidOffset, Unknown, ChecksumNotReady};
+use soft_shared_lib::soft_error_code::SoftErrorCode::{FileNotFound, InvalidOffset, Internal, ChecksumNotReady};
 use crate::server::FILE_READER_BUFFER_SIZE;
 use soft_shared_lib::packet::packet_buf::{PacketBuf, DataPacketBuf};
 use soft_shared_lib::error::ErrorType::{IOError, Eof};
@@ -37,6 +36,7 @@ use soft_shared_lib::packet::req_packet::ReqPacket;
 use soft_shared_lib::constants::SOFT_MAX_PACKET_SIZE;
 use std::sync::atomic::AtomicU16;
 use std::sync::atomic::Ordering::SeqCst;
+use soft_shared_async_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
 
 const PACKET_CHANNEL_SIZE: usize = 10;
 
@@ -49,7 +49,7 @@ type InternalSequenceNumber = i128;
 
 pub struct Connection {
     pub connection_id: ConnectionId,
-    pub socket: Arc<UdpSocket>,
+    pub socket: Arc<LossSimulationUdpSocket>,
     pub packet_sender: Sender<(PacketBuf, SocketAddr)>,
     congestion_cache: Arc<CongestionCache>,
     connection_timeout: Mutex<Instant>,
@@ -83,7 +83,7 @@ impl Connection {
     /// received packets have to be passed to the packet_sender channel
     ///
     /// fails if request is invalid or file is not found
-    pub async fn new(connection_id: ConnectionId, req: &ReqPacket, src_addr: SocketAddr, socket: Arc<UdpSocket>, congestion_cache: Arc<CongestionCache>, checksum_cache: Arc<ChecksumCache>, file_sandbox: &FileSandbox) -> error::Result<Arc<Connection>> {
+    pub async fn new(connection_id: ConnectionId, req: &ReqPacket, src_addr: SocketAddr, socket: Arc<LossSimulationUdpSocket>, congestion_cache: Arc<CongestionCache>, checksum_cache: Arc<ChecksumCache>, file_sandbox: &FileSandbox) -> error::Result<Arc<Connection>> {
         let (packet_sender, packet_receiver) = tokio::sync::mpsc::channel(PACKET_CHANNEL_SIZE);
 
         let file = match file_sandbox.get_file(req.file_name()).await {
@@ -117,7 +117,7 @@ impl Connection {
 
         // set file pointer to offset
         if let std::io::Result::Err(e) = reader.seek(SeekFrom::Start(req.offset())).await {
-            let err = ErrPacket::new_buf(Unknown, 0);
+            let err = ErrPacket::new_buf(Internal, 0);
             socket.send_to(err.buf(), src_addr).await?;
             debug!("sent {} to {}", &err, src_addr);
             return Err(IOError(e));
@@ -195,7 +195,17 @@ impl Connection {
                         }
                     }
                 };
-                self.send_data().await;
+                match self.send_data().await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("failed to send data, caused by: {}", e);
+                        let client_addr = (*self.client_addr.lock().await).clone();
+                        let err = ErrPacket::new_buf(Internal, self.connection_id);
+                        self.socket.send_to(err.buf(), client_addr).await?;
+                        debug!("sent {} to {}", &err, client_addr);
+                        break;
+                    }
+                };
             }
             return Ok(());
         })
@@ -251,7 +261,9 @@ impl Connection {
     }
 
     /// send data packets until the effective window is 0 again
-    async fn send_data(&self) {
+    ///
+    /// return Error if connection should close and send Err packet
+    async fn send_data(&self) -> error::Result<()> {
         while self.effective_window().await > 0 {
             let sequence_number = (*self.last_packet_sent.lock().await + 1) as SequenceNumber;
             let mut data_send_buffer = self.data_send_buffer.lock().await;
@@ -269,9 +281,7 @@ impl Connection {
                                 break
                             }
                             _ => {
-                                //TODO handle error
-                                log::error!("file read error");
-                                break
+                                return Err(e);
                             }
                         }
 
@@ -292,6 +302,7 @@ impl Connection {
                 *data_send_instant_sample = (sequence_number as i128, Instant::now());
             }
         }
+        return Ok(());
     }
 
     /// Read next Data packet from file
