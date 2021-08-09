@@ -10,6 +10,7 @@ use soft_shared_lib::packet::packet::Packet;
 use soft_shared_lib::packet::packet::Packet::{Acc, Data};
 use soft_shared_lib::packet::packet_buf::PacketBuf;
 use soft_shared_lib::packet::req_packet::ReqPacket;
+use std::cmp::max;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::net::UdpSocket;
@@ -21,6 +22,8 @@ use std::time::Instant;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 const MAX_PACKET_SIZE: usize = 1200;
+const RECIEVE_WINDOW_THRESH: usize = 10;
+const MB_1: usize = 2usize.pow(20);
 
 pub struct Client {
     state: Arc<ClientState>,
@@ -58,7 +61,7 @@ impl Client {
 
                 offset.store(current_file_size, SeqCst);
                 state.checksum.store(Some(checksum), SeqCst);
-                state.progress.store(current_file_size, SeqCst);
+                state.transferred_bytes.store(current_file_size, SeqCst);
             } else {
                 log::error!("File already present");
                 state.state_type.store(ClientStateType::Downloaded, SeqCst);
@@ -334,32 +337,34 @@ impl Client {
         {
             return;
         }
-
         self.state
             .state_type
             .store(ClientStateType::Downloading, SeqCst);
         log::info!("Starting download");
 
-        let download_buffer = OpenOptions::new()
+        let download_file = OpenOptions::new()
             .append(true)
             .open(&self.filename)
             .expect("Unable to open file for downloading.");
-        let mut writer = BufWriter::new(download_buffer);
-        writer
+        let mut download_buffer = BufWriter::with_capacity(MB_1, download_file);
+        let capacity = MB_1;
+        download_buffer
             .seek(SeekFrom::Start(self.offset.load(SeqCst)))
             .expect("Unable to seek to offset");
 
+        let mut recieve_window;
         let mut recv_buf = [0; MAX_PACKET_SIZE];
-        let mut progress = self.state.progress.load(SeqCst);
+        let mut progress = self.state.transferred_bytes.load(SeqCst);
         let file_size = self.state.filesize.load(SeqCst);
         let connection_id = self.state.connection_id.load(SeqCst);
 
         while progress != file_size
             && self.state.state_type.load(SeqCst) == ClientStateType::Downloading
         {
-            let packet_size = self.state.socket.recv(&mut recv_buf).expect("Did not get any data");
+            // TODO: Handle timeout here.
+            let packet_size = self.state.socket.recv(&mut recv_buf).expect("Did not recieve message");
 
-            // Store rtt measurement and set read timeout on the socket.
+            // Store rtt measurement on the socket.
             if self.state.sequence_nr.load(SeqCst) == 0 {
                 self.state.rtt.store(
                     Some(self.initial_ack.load(SeqCst).unwrap().elapsed()),
@@ -370,6 +375,15 @@ impl Client {
             }
             let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
 
+            let bytes_buffered = download_buffer.buffer().len();
+            if capacity - bytes_buffered < MAX_PACKET_SIZE {
+                download_buffer.flush().expect("Unable to flush data from writer buffer");
+                recieve_window = capacity / MAX_PACKET_SIZE;
+            } else {
+                recieve_window = (capacity - bytes_buffered) / MAX_PACKET_SIZE;
+            }
+            recieve_window = max(recieve_window, RECIEVE_WINDOW_THRESH); 
+
             match unchecked_packet {
                 Err(UnsupportedSoftVersion(_)) => {
                     eprintln!("received unsupported packet");
@@ -377,16 +391,16 @@ impl Client {
                 Ok(Data(p)) => {
                     if p.sequence_number() == self.state.sequence_nr.load(SeqCst) {
                         self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
-                        let _ = writer.write_all(p.data()).unwrap();
+                        let _ = download_buffer.write_all(p.data()).unwrap();
                         let send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                            1,
+                            recieve_window as u16,
                             connection_id,
                             p.sequence_number() + 1,
                         ));
                         let _ = self.state.socket.send(send_buf.buf());
 
                         progress = progress + p.data().len() as u64;
-                        self.state.progress.store(progress, SeqCst);
+                        self.state.transferred_bytes.store(progress, SeqCst);
                         self.ack_timeout.store(Option::Some(Instant::now()), SeqCst);
                     }
                     else {
@@ -407,6 +421,8 @@ impl Client {
                 self.ack_timeout.store(Option::Some(Instant::now()), SeqCst);
             }
         }
+
+        download_buffer.flush().expect("Error occoured when flushing writer");
         return;
     }
 
@@ -414,8 +430,12 @@ impl Client {
         return self.state.state_type.load(SeqCst);
     }
 
-    pub fn progress(&self) -> f64 {
-        return self.state.progress.load(SeqCst) as f64 / self.state.filesize.load(SeqCst) as f64;
+    // Returns the number of transferred bytes.
+    pub fn progress(&self) -> u64 {
+        return self.state.transferred_bytes.load(SeqCst);
+    }
+
+    pub fn file_size(&self) -> u64 {
+        return self.state.filesize.load(SeqCst);
     }
 }
-

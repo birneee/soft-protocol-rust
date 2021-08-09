@@ -5,7 +5,7 @@ use std::{net::UdpSocket, time::Duration};
 pub struct ClientState {
     pub state_type: Atomic<ClientStateType>,
     /// number of received bytes
-    pub progress: Atomic<u64>,
+    pub transferred_bytes: Atomic<u64>,
     pub socket: UdpSocket,
     pub connection_id: Atomic<u32>,
     pub sequence_nr: Atomic<u64>,
@@ -20,14 +20,14 @@ impl ClientState {
     pub fn new(socket: UdpSocket) -> ClientState {
         ClientState {
             state_type: Atomic::new(ClientStateType::Preparing),
-            progress: Atomic::new(0),
+            transferred_bytes: Atomic::new(0),
             socket,
             connection_id: Atomic::new(32),
             sequence_nr: Atomic::new(0),
             checksum: Atomic::new(None),
             filesize: Atomic::new(0),
             file_changed: Atomic::new(false),
-            rtt: Atomic::new(None)
+            rtt: Atomic::new(None),
         }
     }
 }
