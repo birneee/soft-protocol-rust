@@ -13,7 +13,7 @@ fn main() {
             Arg::with_name("host")
                 .short("h")
                 .long("host")
-                .value_name("HOSTNAME")
+                .value_name("IP/HOSTNAME")
                 .help("The host to request from")
                 .required_unless("server")
                 .conflicts_with("server")
