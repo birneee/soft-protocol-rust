@@ -174,11 +174,19 @@ fn download_file(socket: UdpSocket, filename: &str) {
             Validating => {
                 if current_state == Downloading {
                     pb.message(format!("{} -> Validating: ", &filename).as_str());
+                    pb.set(client.file_size());
+                    pb.show_speed = false;
                     current_state = Validating;
                 }
                 pb.tick();
             }
             Downloaded => {
+                if current_state == Downloading || current_state == Validating {
+                    pb.message(format!("{} -> Downloaded: ", &filename).as_str());
+                    pb.set(client.file_size());
+                    pb.show_speed = false;
+                    current_state = Downloaded;
+                }
                 stopped = true;
                 pb.finish_println("done\n");
             }
@@ -188,7 +196,6 @@ fn download_file(socket: UdpSocket, filename: &str) {
             }
             Error => {
                 stopped = true;
-                pb.finish()
             }
         }
         if stopped {
