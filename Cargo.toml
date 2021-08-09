@@ -6,4 +6,5 @@ members = [
     "soft_client_lib",
     "soft_server_cli",
     "soft_client_cli",
+    "soft_cli",
 ]
