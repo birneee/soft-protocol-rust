@@ -41,7 +41,7 @@ fn main() {
                 .short("v")
                 .long("verbose")
                 .multiple(true)
-                .help("Sets the level of verbosity (apply multiple times: 0=warn, 1=info, 2=debug, 3=trace)")
+                .help("Sets the level of verbosity (''=warn, 'v'=info, 'vv'=debug, 'vvv'=trace)")
                 .takes_value(false)
         )
         .arg(
