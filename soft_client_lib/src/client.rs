@@ -400,7 +400,7 @@ impl Client {
                         ));
 
                         log::trace!("sending {}", send_buf);
-                        let _ = self.state.socket.send(send_buf.buf());
+                        self.state.socket.send(send_buf.buf()).unwrap();
 
                         progress = progress + p.data().len() as u64;
                         self.state.transferred_bytes.store(progress, SeqCst);
