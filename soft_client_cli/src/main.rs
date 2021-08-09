@@ -59,6 +59,14 @@ fn main() {
                 .help("client prints execution details")
                 .takes_value(false),
         )
+        .arg(
+            Arg::with_name("trace")
+                .short("c")
+                .long("trace")
+                .value_name("TRACE")
+                .help("client prints execution details and packet traces")
+                .takes_value(false),
+        )
         .get_matches();
 
     let host = matches
@@ -77,9 +85,13 @@ fn main() {
         env_logger::builder()
             .filter_level(LevelFilter::Debug)
             .init();
+    } else if matches.is_present("trace") {
+        env_logger::builder()
+            .filter_level(LevelFilter::Trace)
+            .init();
     } else {
         env_logger::builder()
-            .filter_level(LevelFilter::Error)
+            .filter_level(LevelFilter::Info)
             .init();
     }
 

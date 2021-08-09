@@ -1,6 +1,5 @@
 use crate::client_state::{ClientState, ClientStateType};
 use atomic::Atomic;
-use log::info;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use soft_shared_lib::field_types::{Checksum, Offset};
 use soft_shared_lib::helper::sha256_helper::{generate_checksum, sha256_to_hex_string};
@@ -40,11 +39,11 @@ impl Client {
         let download_buffer: File;
         let offset = Atomic::new(0);
 
-        log::info!("Creating client to get file {}", filename);
+        log::debug!("Creating client to get file {}", filename);
         state.state_type.store(ClientStateType::Preparing, SeqCst);
 
         if Path::new(&filename).exists() {
-            log::info!("File exists: {}", &filename);
+            log::debug!("File exists: {}", &filename);
             let checksum = Client::generate_file_checksum(&filename);
 
             if let Some(checksum) = checksum {
@@ -172,7 +171,7 @@ impl Client {
         match e.error_code() {
             soft_shared_lib::soft_error_code::SoftErrorCode::Stop => todo!(),
             soft_shared_lib::soft_error_code::SoftErrorCode::Internal => {
-                log::error!("Unknown Error Occoured, aborting");
+                log::error!("Unknown Internal Error Occured, aborting");
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::FileNotFound => {
                 log::error!(
@@ -251,7 +250,7 @@ impl Client {
             Ok(Acc(p)) => {
                 if let Some(checksum) = self.state.checksum.load(SeqCst) {
                     if p.checksum() != checksum {
-                        log::info!(
+                        log::debug!(
                             "File changed, re-handshaking to downloading latest file. {}",
                             self.filename
                         );
@@ -261,7 +260,7 @@ impl Client {
                         self.state.file_changed.store(true, SeqCst);
                         return;
                     } else {
-                        log::info!("Partial file checksums are equal. Continuing download");
+                        log::debug!("Partial file checksums are equal. Continuing download");
                     }
                 } else {
                     Client::store_checksum(self.filename.as_str(), p.checksum());
@@ -307,7 +306,7 @@ impl Client {
             return;
         }
 
-        log::info!("Validating downloaded file checksum");
+        log::debug!("Validating downloaded file checksum");
 
         self.state
             .state_type
@@ -318,7 +317,7 @@ impl Client {
         let checksum = generate_checksum(&mut reader);
 
         if self.state.checksum.load(SeqCst).eq(&Some(checksum)) {
-            info!(
+            log::debug!(
                 "Checksum validated {}, file downloaded",
                 sha256_to_hex_string(checksum)
             );
@@ -337,10 +336,11 @@ impl Client {
         {
             return;
         }
+
         self.state
             .state_type
             .store(ClientStateType::Downloading, SeqCst);
-        log::info!("Starting download");
+        log::debug!("Starting download");
 
         let download_file = OpenOptions::new()
             .append(true)
@@ -382,13 +382,14 @@ impl Client {
             } else {
                 recieve_window = (capacity - bytes_buffered) / MAX_PACKET_SIZE;
             }
-            recieve_window = max(recieve_window, RECIEVE_WINDOW_THRESH); 
+            recieve_window = max(recieve_window, RECIEVE_WINDOW_THRESH);
 
             match unchecked_packet {
                 Err(UnsupportedSoftVersion(_)) => {
                     eprintln!("received unsupported packet");
                 }
                 Ok(Data(p)) => {
+                    log::trace!("received {}", p);
                     if p.sequence_number() == self.state.sequence_nr.load(SeqCst) {
                         self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
                         let _ = download_buffer.write_all(p.data()).unwrap();
@@ -397,6 +398,8 @@ impl Client {
                             connection_id,
                             p.sequence_number() + 1,
                         ));
+
+                        log::trace!("sending {}", send_buf);
                         let _ = self.state.socket.send(send_buf.buf());
 
                         progress = progress + p.data().len() as u64;
@@ -404,14 +407,14 @@ impl Client {
                         self.ack_timeout.store(Option::Some(Instant::now()), SeqCst);
                     }
                     else {
-                        log::debug!("Received duplicate data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
+                        log::trace!("Received duplicate data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
                     }
                 }
                 Ok(Packet::Err(e)) => self.handle_error(e),
                 _ => {}
             }
             if self.ack_timeout.load(SeqCst).unwrap().elapsed() > 3 * self.state.rtt.load(SeqCst).unwrap() {
-                log::debug!("Exceeded 3 * RTT, resending ACK...");
+                log::trace!("Exceeded 3 * RTT, resending ACK [sequence_number: {:?}]", self.state.sequence_nr.load(SeqCst));
                 let send_buf = PacketBuf::Ack(AckPacket::new_buf(
                     1,
                     connection_id,

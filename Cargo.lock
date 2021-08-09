@@ -694,26 +694,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "soft_server_lib"
-version = "0.1.0"
-dependencies = [
- "atomic",
- "env_logger",
- "hex-literal",
- "log",
- "rand 0.8.4",
- "sha2",
- "soft_shared_lib",
- "stoppable_thread",
- "tempdir",
- "test-case",
- "ttl_cache",
-]
-
-[[package]]
 name = "soft_shared_async_lib"
 version = "0.1.0"
 dependencies = [
+ "rand 0.8.4",
  "sha2",
  "soft_shared_lib",
  "tokio",
@@ -731,12 +715,6 @@ dependencies = [
  "rand 0.8.4",
  "sha2",
 ]
-
-[[package]]
-name = "stoppable_thread"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6700c1ed393aa9c1fff950032a64a4856436dadee820641ce1b914cab65019f"
 
 [[package]]
 name = "strsim"
