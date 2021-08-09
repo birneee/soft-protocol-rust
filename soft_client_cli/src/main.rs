@@ -143,12 +143,6 @@ fn download_file(socket: UdpSocket, filename: &str) {
     let handle = thread::spawn(move || {
         let client = client_subthread;
 
-        // TODO: Handle Exceptions gracefully, right now, if this thread panics, the main thread hat keine Idee.
-        // We can update the client status to stopped or error but that's not possible due to except() function calls
-        // When we encounter an error.
-        // One solution is to have a channel open between the worker thread and the main thread.
-        // If the thread drops the sender, that means that the thread's stopped due to a panic and
-        // we can stop listening on the updates from that thread.
         client.run();
     });
 
@@ -180,11 +174,19 @@ fn download_file(socket: UdpSocket, filename: &str) {
             Validating => {
                 if current_state == Downloading {
                     pb.message(format!("{} -> Validating: ", &filename).as_str());
+                    pb.set(client.file_size());
+                    pb.show_speed = false;
                     current_state = Validating;
                 }
                 pb.tick();
             }
             Downloaded => {
+                if current_state == Downloading || current_state == Validating {
+                    pb.message(format!("{} -> Downloaded: ", &filename).as_str());
+                    pb.set(client.file_size());
+                    pb.show_speed = false;
+                    current_state = Downloaded;
+                }
                 stopped = true;
                 pb.finish_println("done\n");
             }
@@ -194,7 +196,6 @@ fn download_file(socket: UdpSocket, filename: &str) {
             }
             Error => {
                 stopped = true;
-                pb.finish()
             }
         }
         if stopped {
