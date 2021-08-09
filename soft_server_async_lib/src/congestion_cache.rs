@@ -16,7 +16,7 @@ const CONGESTION_ALPHA: f64 = 1.0;
 /// factor for decreasing the congestion window
 const CONGESTION_BETA: f64 = 0.5;
 const RTT_MOVING_AVERAGE_GAMMA: f64 = 0.9;
-const MIN_RTT: Duration = Duration::from_micros(1);
+const MIN_RTT: Duration = Duration::from_millis(1);
 
 #[derive(PartialEq, Clone)]
 pub struct CongestionState {
