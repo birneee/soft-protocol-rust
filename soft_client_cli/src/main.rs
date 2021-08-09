@@ -23,14 +23,14 @@ fn main() {
         )
         .arg(
             Arg::with_name("port")
-                .short("p")
+                .short("t")
                 .value_name("PORT")
                 .help("The port to be used")
                 .default_value("9840"),
         )
         .arg(
             Arg::with_name("markovp")
-                .short("c")
+                .short("p")
                 .value_name("Markov P")
                 .help("The p probability for the Markov Chain")
                 .default_value("0"),
@@ -61,7 +61,7 @@ fn main() {
         )
         .arg(
             Arg::with_name("trace")
-                .short("t")
+                .short("c")
                 .long("trace")
                 .value_name("TRACE")
                 .help("client prints execution details and packet traces")
