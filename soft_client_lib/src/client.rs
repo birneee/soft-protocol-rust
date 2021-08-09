@@ -389,12 +389,7 @@ impl Client {
                     eprintln!("received unsupported packet");
                 }
                 Ok(Data(p)) => {
-                    log::trace!("received Data [connection_id: {:?}, sequence_number: {:?}, data: {:?}] from {:?}",
-                        p.connection_id(),
-                        p.sequence_number(),
-                        p.packet_size(),
-                        self.state.socket.peer_addr()
-                    );
+                    log::trace!("received {}", p);
                     if p.sequence_number() == self.state.sequence_nr.load(SeqCst) {
                         self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
                         let _ = download_buffer.write_all(p.data()).unwrap();
@@ -403,11 +398,8 @@ impl Client {
                             connection_id,
                             p.sequence_number() + 1,
                         ));
-                        log::trace!("sending Ack [connection_id: {:?}, sequence_number: {:?}] to {:?}",
-                        connection_id,
-                        self.state.sequence_nr.load(SeqCst),
-                        self.state.socket.peer_addr()
-                    );
+
+                        log::trace!("sending {}", send_buf);
                         let _ = self.state.socket.send(send_buf.buf());
 
                         progress = progress + p.data().len() as u64;
