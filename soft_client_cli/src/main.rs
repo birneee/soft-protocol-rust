@@ -23,14 +23,14 @@ fn main() {
         )
         .arg(
             Arg::with_name("port")
-                .short("t")
+                .short("p")
                 .value_name("PORT")
                 .help("The port to be used")
                 .default_value("9840"),
         )
         .arg(
             Arg::with_name("markovp")
-                .short("p")
+                .short("c")
                 .value_name("Markov P")
                 .help("The p probability for the Markov Chain")
                 .default_value("0"),
@@ -59,6 +59,14 @@ fn main() {
                 .help("client prints execution details")
                 .takes_value(false),
         )
+        .arg(
+            Arg::with_name("trace")
+                .short("t")
+                .long("trace")
+                .value_name("TRACE")
+                .help("client prints execution details and packet traces")
+                .takes_value(false),
+        )
         .get_matches();
 
     let host = matches
@@ -76,6 +84,10 @@ fn main() {
     if matches.is_present("verbose") {
         env_logger::builder()
             .filter_level(LevelFilter::Debug)
+            .init();
+    } else if matches.is_present("trace") {
+        env_logger::builder()
+            .filter_level(LevelFilter::Trace)
             .init();
     } else {
         env_logger::builder()
@@ -185,7 +197,6 @@ fn download_file(socket: UdpSocket, filename: &str) {
                 pb.finish()
             }
         }
-        thread::sleep(Duration::from_millis(10));
         if stopped {
             break;
         }
