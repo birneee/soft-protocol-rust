@@ -3,7 +3,7 @@ use log::LevelFilter;
 
 pub fn client_main(matches: ArgMatches) {
 
-    let log_level = match matches.occurrences_of("verbose") {
+    let _log_level = match matches.occurrences_of("verbose") {
         0 => LevelFilter::Warn,
         1 => LevelFilter::Info,
         2 => LevelFilter::Debug,
