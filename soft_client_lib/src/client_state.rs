@@ -27,7 +27,7 @@ impl ClientState {
             checksum: Atomic::new(None),
             filesize: Atomic::new(0),
             file_changed: Atomic::new(false),
-            rtt: Atomic::new(None)
+            rtt: Atomic::new(None),
         }
     }
 }
