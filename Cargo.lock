@@ -722,6 +722,7 @@ version = "0.1.0"
 dependencies = [
  "byteorder",
  "hex-literal",
+ "log",
  "num",
  "num-derive",
  "num-traits",

@@ -3,8 +3,9 @@ use log::{info, LevelFilter};
 use pbr::ProgressBar;
 use soft_client_lib::client::Client;
 use soft_client_lib::client_state::ClientStateType::{self, *};
+use soft_shared_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
 use std::io::Stdout;
-use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -56,6 +57,7 @@ fn main() {
                 .short("v")
                 .long("verbose")
                 .value_name("VERBOSE")
+                .conflicts_with("trace")
                 .help("client prints execution details")
                 .takes_value(false),
         )
@@ -64,6 +66,7 @@ fn main() {
                 .short("c")
                 .long("trace")
                 .value_name("TRACE")
+                .conflicts_with("verbose")
                 .help("client prints execution details and packet traces")
                 .takes_value(false),
         )
@@ -96,6 +99,16 @@ fn main() {
         .unwrap()
         .parse::<u64>()
         .expect("invalid migration period");
+    let mut p: f64 = matches
+        .value_of("markovp")
+        .unwrap()
+        .parse()
+        .expect("invalid p argument");
+    let mut q: f64 = matches
+        .value_of("markovq")
+        .unwrap()
+        .parse()
+        .expect("invalid q argument");
 
     if matches.is_present("verbose") {
         env_logger::builder()
@@ -112,10 +125,19 @@ fn main() {
     }
 
     info!("Starting SOFT protocol client");
-    let socket = setup_udp_socket(host, port);
+
+    if p == 0.0 {
+        p = q;
+    }
+    if q == 0.0 {
+        q = p;
+    }
+
+    let socket = setup_udp_socket(host, port, p, q);
 
     for filename in filenames {
-        download_file(socket.try_clone().unwrap(), filename, migration);
+        let cloned_socket = socket.try_clone().expect("Unable to clone socket");
+        download_file(cloned_socket, filename, migration);
     }
 }
 
@@ -135,18 +157,21 @@ fn setup_progress_bar() -> ProgressBar<Stdout> {
     pb
 }
 
-fn setup_udp_socket(ip: IpAddr, port: u16) -> UdpSocket {
+/// Create a Loss Simulated Udp Socket based on the given markov parameters
+/// p, q.
+///
+fn setup_udp_socket(ip: IpAddr, port: u16, p: f64, q: f64) -> LossSimulationUdpSocket {
     let address = SocketAddr::new(ip, port);
-    let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
+    let socket = LossSimulationUdpSocket::bind("0.0.0.0:0", p, q).expect("failed to bind UDP socket");
     socket
-        .set_read_timeout(Some(Duration::from_secs(10)))
+        .set_read_timeout(Some(Duration::from_secs(60)))
         .expect("Unable to set read timeout for socket");
-    socket.connect(address).expect("connection failed");
+    let _ = socket.connect(address);
     socket
 }
 
 
-fn download_file(socket: UdpSocket, filename: &str, migration: u64) {
+fn download_file(socket: LossSimulationUdpSocket, filename: &str, migration: u64) {
     let client = Arc::new(Client::init(
         socket,
         filename.to_string(),
@@ -163,7 +188,6 @@ fn download_file(socket: UdpSocket, filename: &str, migration: u64) {
         client.run();
     });
 
-    let mut current_state: ClientStateType = Preparing;
     let mut stopped = false;
 
     let mut pb = setup_progress_bar();
@@ -171,39 +195,26 @@ fn download_file(socket: UdpSocket, filename: &str, migration: u64) {
         match client.state() {
             Preparing => {}
             Handshaking => {
-                // This handles the state changes alone.
-                if current_state == Preparing {
-                    pb.message(format!("{} -> Handshaking: ", &filename).as_str());
-                    current_state = Handshaking;
-                }
+                pb.message(format!("{} -> Handshaking: ", &filename).as_str());
                 pb.tick();
             }
             Downloading => {
-                // Handshaking can be very fast sometimes.
-                if current_state == Handshaking || current_state == Preparing {
-                    pb.total = client.file_size();
-                    pb.message(format!("{} -> Downloading: ", &filename).as_str());
-                    current_state = Downloading;
-                }
+                pb.total = client.file_size();
+                pb.message(format!("{} -> Downloading: ", &filename).as_str());
                 pb.set(client.progress());
                 pb.tick();
             }
             Validating => {
-                if current_state == Downloading {
-                    pb.message(format!("{} -> Validating: ", &filename).as_str());
-                    pb.set(client.file_size());
-                    pb.show_speed = false;
-                    current_state = Validating;
-                }
+                pb.message(format!("{} -> Validating: ", &filename).as_str());
+                pb.set(client.file_size());
+                pb.show_speed = false;
                 pb.tick();
             }
             Downloaded => {
-                if current_state == Downloading || current_state == Validating {
-                    pb.message(format!("{} -> Downloaded: ", &filename).as_str());
-                    pb.set(client.file_size());
-                    pb.show_speed = false;
-                    current_state = Downloaded;
-                }
+                pb.total = client.file_size();
+                pb.message(format!("{} -> Downloaded: ", &filename).as_str());
+                pb.set(client.file_size());
+                pb.show_speed = false;
                 stopped = true;
                 pb.finish_println("done\n");
             }

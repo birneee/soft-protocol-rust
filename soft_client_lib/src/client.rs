@@ -2,6 +2,7 @@ use crate::client_state::{ClientState, ClientStateType};
 use atomic::Atomic;
 use soft_shared_lib::error::ErrorType::UnsupportedSoftVersion;
 use soft_shared_lib::field_types::{Checksum, Offset};
+use soft_shared_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
 use soft_shared_lib::helper::sha256_helper::{generate_checksum, sha256_to_hex_string};
 use soft_shared_lib::packet::ack_packet::AckPacket;
 use soft_shared_lib::packet::err_packet::ErrPacket;
@@ -11,8 +12,7 @@ use soft_shared_lib::packet::packet_buf::PacketBuf;
 use soft_shared_lib::packet::req_packet::ReqPacket;
 use std::cmp::max;
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
-use std::net::{UdpSocket};
+use std::io::{BufReader, BufWriter, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::os::unix::prelude::MetadataExt;
 use std::path::Path;
 use std::sync::atomic::Ordering::SeqCst;
@@ -37,7 +37,7 @@ pub struct Client {
 
 impl Client {
     //TODO: Implement timeout for case of server unreachability
-    pub fn init(socket: UdpSocket, filename: String, migration: u64) -> Client {
+    pub fn init(socket: LossSimulationUdpSocket, filename: String, migration: u64) -> Client {
         let state = Arc::new(ClientState::new(socket));
         let download_buffer: File;
         let offset = Atomic::new(0);
@@ -132,7 +132,6 @@ impl Client {
         if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
             return;
         }
-
         self.handshake();
 
         self.do_file_transfer();
@@ -221,15 +220,15 @@ impl Client {
         let mut recv_buf = [0; MAX_PACKET_SIZE];
         let mut send_buf: PacketBuf;
 
-        self.state
-            .state_type
-            .store(ClientStateType::Handshaking, SeqCst);
-
         send_buf = PacketBuf::Req(ReqPacket::new_buf(
             MAX_PACKET_SIZE as u16,
             &self.filename,
             self.offset.load(SeqCst),
         ));
+
+        self.state
+            .state_type
+            .store(ClientStateType::Handshaking, SeqCst);
 
         log::trace!("{}: sending {}", self.state.connection_id.load(SeqCst), send_buf);
         self.state
@@ -239,13 +238,20 @@ impl Client {
             .send(send_buf.buf())
             .expect("couldn't send message");
 
-        // TODO: Handle errors.
-        self.state
-            .socket
-            .read()
-            .unwrap()
-            .recv(&mut recv_buf)
-            .expect("couldn't send message");
+        match self.state.socket.read().unwrap().recv(&mut recv_buf) {
+            Ok(_) => (),
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                log::error!("Connection Timed out");
+                self.state.state_type.store(ClientStateType::Error, SeqCst);
+                return;
+            }
+            Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
+                log::error!("Host not reachable");
+                self.state.state_type.store(ClientStateType::Error, SeqCst);
+                return;
+            }
+            Err(_) => (),
+        }
 
         let unchecked_packet = Packet::from_buf(&mut recv_buf);
 
@@ -286,8 +292,7 @@ impl Client {
                 log::debug!("File Size: {}", p.file_size());
                 log::debug!("Checksum: {}", sha256_to_hex_string(p.checksum()));
                 send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                    //TODO: Determine correct recv window and add recv windows management
-                    1,
+                    RECIEVE_WINDOW_THRESH as u16,
                     self.state.connection_id.load(SeqCst),
                     0,
                 ));
@@ -313,6 +318,12 @@ impl Client {
             // Discard other packets types we encounter.
             _ => {}
         }
+
+        if self.state.checksum.load(SeqCst).is_none() {
+            log::error!("Handshake failed");
+            self.state.state_type.store(ClientStateType::Error, SeqCst);
+            return;
+        }
     }
 
     fn validate_download(&self) {
@@ -322,7 +333,7 @@ impl Client {
             return;
         }
 
-        log::debug!("Validating downloaded file checksum");
+        log::debug!("Generating checksum for downloaded file");
 
         self.state
             .state_type
@@ -493,12 +504,15 @@ impl Client {
     }
 
     pub fn migrate(&self) {
-        let new_socket = UdpSocket::bind("0.0.0.0:0").unwrap();
         let server_addr = self.state.socket
             .read()
             .unwrap()
+            .inner
             .peer_addr()
             .unwrap();
+        let p = self.state.socket.read().unwrap().p;
+        let q = self.state.socket.read().unwrap().q;
+        let new_socket = LossSimulationUdpSocket::bind("0.0.0.0:0", p, q).unwrap();
         log::debug!("Client migrating from {} to {}", self.state.socket.read().unwrap().local_addr().unwrap(), new_socket.local_addr().unwrap());
         let mut lock = self.state.socket.write().expect("failed to get write lock");
         *lock = new_socket;
