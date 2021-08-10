@@ -126,7 +126,6 @@ impl Client {
         if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
             return;
         }
-
         self.handshake();
 
         self.do_file_transfer();
@@ -304,6 +303,12 @@ impl Client {
             // Discard other packets types we encounter.
             _ => {}
         }
+
+        if self.state.checksum.load(SeqCst).is_none() {
+            log::error!("Handshake failed");
+            self.state.state_type.store(ClientStateType::Error, SeqCst);
+            return;
+        }
     }
 
     fn validate_download(&self) {
@@ -467,7 +472,6 @@ impl Client {
         download_buffer
             .flush()
             .expect("Error occoured when flushing writer");
-        return;
     }
 
     pub fn state(&self) -> ClientStateType {
