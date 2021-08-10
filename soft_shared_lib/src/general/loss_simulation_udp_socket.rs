@@ -8,11 +8,11 @@ use core::mem;
 ///
 /// Sent packet are lost with the specified probability
 pub struct LossSimulationUdpSocket {
-    pub inner: UdpSocket,
+    inner: UdpSocket,
     /// the probability that the next package sent will be lost if the last packet was lost
-    pub p: f64,
+    p: f64,
     /// the probability that the next package sent will be lost if the last packet was also lost
-    pub q: f64,
+    q: f64,
     last_packet_lost: AtomicBool,
     packet_losses: AtomicU32
 }
@@ -93,6 +93,8 @@ impl LossSimulationUdpSocket {
     pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
         self.inner.local_addr()
     }
+
+    pub fn peer_addr(&self) -> std::io::Result<SocketAddr> {self.inner.peer_addr()}
 
     pub fn try_clone(&self) -> std::io::Result<Self> {
         let socket = self.inner.try_clone()?;

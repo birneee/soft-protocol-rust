@@ -16,7 +16,7 @@ pub struct ClientState {
     // Describes if the file has changed during download resumption.
     pub file_changed: Atomic<bool>,
     pub initial_rtt: Atomic<Option<Duration>>,
-    pub rtt: Atomic<Option<Duration>>,
+    pub current_rtt: Atomic<Option<Duration>>,
 }
 
 impl ClientState {
@@ -31,7 +31,7 @@ impl ClientState {
             filesize: Atomic::new(0),
             file_changed: Atomic::new(false),
             initial_rtt: Atomic::new(None),
-            rtt: Atomic::new(None),
+            current_rtt: Atomic::new(None),
         }
     }
 }
