@@ -519,9 +519,8 @@ impl Client {
             let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap()));
             self.consecutive_timeouts_counter.store(new_timeout_value, SeqCst);
             return true;
-        } else {
-            self.consecutive_timeouts_counter.store(new_timeout_value, SeqCst);
-            return false;
         }
+        self.consecutive_timeouts_counter.store(new_timeout_value, SeqCst);
+        return false;
     }
 }
