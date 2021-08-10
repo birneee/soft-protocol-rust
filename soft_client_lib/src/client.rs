@@ -399,7 +399,7 @@ impl Client {
                     // Store rtt measurement on the socket and set socket timeout
                     if self.state.sequence_nr.load(SeqCst) == 0 {
                         self.state.rtt.store(
-                            Some(self.initial_ack.load(SeqCst).unwrap().elapsed()),
+                            Some(max(self.initial_ack.load(SeqCst).unwrap().elapsed(), Duration::from_millis(1))),
                             SeqCst,
                         );
                         let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap()));
