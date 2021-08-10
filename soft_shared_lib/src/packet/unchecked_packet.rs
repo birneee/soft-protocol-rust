@@ -117,11 +117,11 @@ impl UncheckedPacket {
     }
 
     pub fn error_code(&self) -> SoftErrorCode {
-        return num::FromPrimitive::from_u8(self.inner[3]).expect("invalid packet type");
+        return num::FromPrimitive::from_u8(self.inner[2]).expect("invalid packet type");
     }
 
     pub fn set_error_code(&mut self, val: SoftErrorCode) {
-        self.inner[3] = val as ErrorCodeRaw;
+        self.inner[2] = val as ErrorCodeRaw;
     }
 
     pub fn receive_window(&self) -> ReceiveWindow {

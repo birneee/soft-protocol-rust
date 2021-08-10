@@ -136,6 +136,11 @@ fn main() {
     let socket = setup_udp_socket(host, port, p, q);
 
     for filename in filenames {
+        let filename_length = filename.as_bytes().len();
+        if  filename_length == 0 || filename_length > 484 {
+            log::error!("File name not supported");
+            continue;
+        }
         let cloned_socket = socket.try_clone().expect("Unable to clone socket");
         download_file(cloned_socket, filename, migration);
     }
@@ -163,8 +168,9 @@ fn setup_progress_bar() -> ProgressBar<Stdout> {
 fn setup_udp_socket(ip: IpAddr, port: u16, p: f64, q: f64) -> LossSimulationUdpSocket {
     let address = SocketAddr::new(ip, port);
     let socket = LossSimulationUdpSocket::bind("0.0.0.0:0", p, q).expect("failed to bind UDP socket");
+    // Initial Socket read timeout of 3 seconds
     socket
-        .set_read_timeout(Some(Duration::from_secs(60)))
+        .set_read_timeout(Some(Duration::from_secs(3)))
         .expect("Unable to set read timeout for socket");
     socket.connect(address).unwrap();
     socket
