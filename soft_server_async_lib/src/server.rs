@@ -74,7 +74,7 @@ impl Server {
                 let packet = match PacketBuf::new(receive_buffer) {
                     Ok(p) => p,
                     Err(e) => {
-                        log::info!("received packet, caused by: {}", e);
+                        log::info!("received invalid packet, caused by: {}", e);
                         continue
                     }
                 };
