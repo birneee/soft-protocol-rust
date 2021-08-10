@@ -57,6 +57,7 @@ fn main() {
                 .short("v")
                 .long("verbose")
                 .value_name("VERBOSE")
+                .conflicts_with("trace")
                 .help("client prints execution details")
                 .takes_value(false),
         )
@@ -65,6 +66,7 @@ fn main() {
                 .short("c")
                 .long("trace")
                 .value_name("TRACE")
+                .conflicts_with("verbose")
                 .help("client prints execution details and packet traces")
                 .takes_value(false),
         )
@@ -81,8 +83,8 @@ fn main() {
         .parse::<u16>()
         .expect("invalid port");
     let filenames = matches.values_of("file").unwrap();
-    let p = matches.value_of("markovp");
-    let q = matches.value_of("markovq");
+    let mut p: f64 = matches.value_of("markovp").unwrap().parse().expect("invalid p argument");
+    let mut q: f64 = matches.value_of("markovq").unwrap().parse().expect("invalid q argument");
 
     if matches.is_present("verbose") {
         env_logger::builder()
@@ -100,14 +102,19 @@ fn main() {
 
     info!("Starting SOFT protocol client");
     let socket;
-    if p.is_some() && q.is_some() {
-        socket = setup_udp_socket(host, port, p.unwrap().parse::<f64>().unwrap(), q.unwrap().parse::<f64>().unwrap());
-    } else {
-        socket = setup_udp_socket(host, port, 0.0, 0.0);
+
+    if p == 0.0 {
+        p = q;
+    }
+    if q == 0.0 {
+        q = p;
     }
 
+    socket = setup_udp_socket(host, port, p, q);
+
     for filename in filenames {
-        download_file(socket.clone(), filename);
+        let cloned_socket = socket.try_clone().expect("Unable to clone socket");
+        download_file(cloned_socket, filename);
     }
 }
 
@@ -134,9 +141,9 @@ fn setup_udp_socket(ip: IpAddr, port: u16, p: f64, q: f64) -> LossSimulationUdpS
     let address = SocketAddr::new(ip, port);
     let socket = LossSimulationUdpSocket::bind("0.0.0.0:0", p, q).expect("failed to bind UDP socket");
     socket
-        .set_read_timeout(Some(Duration::from_secs(10)))
+        .set_read_timeout(Some(Duration::from_secs(60)))
         .expect("Unable to set read timeout for socket");
-    socket.connect(address).expect(format!("Unable to connect to host: {}", address).as_str());
+    let _ = socket.connect(address);
     socket
 }
 

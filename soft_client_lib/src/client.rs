@@ -226,7 +226,7 @@ impl Client {
             .socket
             .send(send_buf.buf())
             .expect("couldn't send message");
-
+                
         match self.state.socket.recv(&mut recv_buf) {
             Ok(_) => (),
             Err(e) if e.kind() == ErrorKind::WouldBlock => {
@@ -280,8 +280,7 @@ impl Client {
                 log::debug!("File Size: {}", p.file_size());
                 log::debug!("Checksum: {}", sha256_to_hex_string(p.checksum()));
                 send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                    //TODO: Determine correct recv window and add recv windows management
-                    1,
+                    RECIEVE_WINDOW_THRESH as u16,
                     self.state.connection_id.load(SeqCst),
                     0,
                 ));
@@ -318,6 +317,8 @@ impl Client {
             return;
         }
 
+        log::debug!("Generating checksum for downloaded file");
+
         self.state
             .state_type
             .store(ClientStateType::Validating, SeqCst);
@@ -325,8 +326,6 @@ impl Client {
         let file = File::open(&self.filename).expect("Unable to open file to validate download");
         let mut reader = BufReader::new(file);
         let checksum = generate_checksum(&mut reader);
-
-        log::debug!("Validating downloaded file checksum");
 
         if self.state.checksum.load(SeqCst).eq(&Some(checksum)) {
             log::debug!(
@@ -381,19 +380,14 @@ impl Client {
                     self.state.state_type.store(ClientStateType::Error, SeqCst);
                     return;
                 }
-                Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
-                    log::error!("Host not reachable");
-                    self.state.state_type.store(ClientStateType::Error, SeqCst);
-                    return;
-                }
-                Err(_) => {
-                    log::error!("Unknown Error Occoured");
+                Err(e) => {
+                    log::error!("Unknown Error Occoured: {}", e);
                     self.state.state_type.store(ClientStateType::Error, SeqCst);
                     return;
                 }
             };
 
-            // Store rtt measurement on the socket.
+            // Store rtt measurement in the state.
             if self.state.sequence_nr.load(SeqCst) == 0 {
                 self.state.rtt.store(
                     Some(self.initial_ack.load(SeqCst).unwrap().elapsed()),
@@ -420,7 +414,7 @@ impl Client {
 
             match unchecked_packet {
                 Err(UnsupportedSoftVersion(_)) => {
-                    eprintln!("received unsupported packet");
+                    log::error!("received unsupported packet");
                 }
                 Ok(Data(p)) => {
                     log::trace!("received {}", p);

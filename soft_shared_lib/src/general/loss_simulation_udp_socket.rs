@@ -37,6 +37,7 @@ impl LossSimulationUdpSocket {
         })
     }
 
+    /// unmodified connect function
     pub fn connect(&self, addr: SocketAddr) -> std::io::Result<()> {
         self.inner.connect(addr)
     }
@@ -91,6 +92,19 @@ impl LossSimulationUdpSocket {
     pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
         self.inner.local_addr()
     }
+
+    pub fn try_clone(&self) -> std::io::Result<Self> {
+        let socket = self.inner.try_clone()?;
+
+        Ok(Self {
+            inner: socket,
+            p: self.p,
+            q: self.q,
+            last_packet_lost: AtomicBool::new(self.last_packet_lost.load(SeqCst)),
+            packet_losses: AtomicU32::new(self.packet_losses.load(SeqCst))
+        })
+    }
+
 }
 
 impl Drop for LossSimulationUdpSocket {
@@ -99,18 +113,5 @@ impl Drop for LossSimulationUdpSocket {
         if packet_losses != 0 {
             log::debug!("Simulated Packet Losses: {}", packet_losses);
         }   
-    }
-}
-
-impl Clone for LossSimulationUdpSocket {
-    fn clone(&self) -> Self {
-        let socket = self.inner.try_clone().expect("Unable to clone socket");
-        Self {
-            inner: socket,
-            p: self.p,
-            q: self.q,
-            last_packet_lost: AtomicBool::new(false),
-            packet_losses: AtomicU32::new(0)
-        }
     }
 }
