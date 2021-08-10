@@ -1,5 +1,5 @@
 use std::net::{UdpSocket, ToSocketAddrs, SocketAddr};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::atomic::Ordering::SeqCst;
 use std::time::Duration;
 
@@ -13,6 +13,7 @@ pub struct LossSimulationUdpSocket {
     /// the probability that the next package sent will be lost if the last packet was also lost
     q: f64,
     last_packet_lost: AtomicBool,
+    packet_losses: AtomicU32
 }
 
 impl LossSimulationUdpSocket {
@@ -32,7 +33,17 @@ impl LossSimulationUdpSocket {
             p,
             q,
             last_packet_lost: AtomicBool::new(false),
+            packet_losses: AtomicU32::new(0)
         })
+    }
+
+    pub fn connect(&self, addr: SocketAddr) -> std::io::Result<()> {
+        self.inner.connect(addr)
+    }
+
+    /// unmodified receive function
+    pub fn recv(&self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.recv(buf)
     }
 
     /// unmodified receive function
@@ -42,8 +53,20 @@ impl LossSimulationUdpSocket {
 
     /// modified send function.
     /// Sent packet are lost with the specified probability.
+    pub fn send(&self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.random_loss() {
+            self.packet_losses.fetch_add(1, SeqCst);
+            Ok(buf.len())
+        } else {
+            self.inner.send(buf)
+        }
+    }
+
+    /// modified send function.
+    /// Sent packet are lost with the specified probability.
     pub fn send_to<A: ToSocketAddrs>(&self, buf: &[u8], addr: A) -> std::io::Result<usize> {
         if self.random_loss() {
+            self.packet_losses.fetch_add(1, SeqCst);
             Ok(buf.len())
         } else {
             self.inner.send_to(buf, addr)
@@ -67,5 +90,27 @@ impl LossSimulationUdpSocket {
 
     pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
         self.inner.local_addr()
+    }
+}
+
+impl Drop for LossSimulationUdpSocket {
+    fn drop(&mut self) {
+        let packet_losses = self.packet_losses.load(SeqCst);
+        if packet_losses != 0 {
+            log::debug!("Simulated Packet Losses: {}", packet_losses);
+        }   
+    }
+}
+
+impl Clone for LossSimulationUdpSocket {
+    fn clone(&self) -> Self {
+        let socket = self.inner.try_clone().expect("Unable to clone socket");
+        Self {
+            inner: socket,
+            p: self.p,
+            q: self.q,
+            last_packet_lost: AtomicBool::new(false),
+            packet_losses: AtomicU32::new(0)
+        }
     }
 }

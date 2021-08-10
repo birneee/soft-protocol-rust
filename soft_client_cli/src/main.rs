@@ -3,8 +3,9 @@ use log::{info, LevelFilter};
 use pbr::ProgressBar;
 use soft_client_lib::client::Client;
 use soft_client_lib::client_state::ClientStateType::{self, *};
+use soft_shared_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
 use std::io::Stdout;
-use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -80,6 +81,8 @@ fn main() {
         .parse::<u16>()
         .expect("invalid port");
     let filenames = matches.values_of("file").unwrap();
+    let p = matches.value_of("markovp");
+    let q = matches.value_of("markovq");
 
     if matches.is_present("verbose") {
         env_logger::builder()
@@ -96,10 +99,15 @@ fn main() {
     }
 
     info!("Starting SOFT protocol client");
-    let socket = setup_udp_socket(host, port);
+    let socket;
+    if p.is_some() && q.is_some() {
+        socket = setup_udp_socket(host, port, p.unwrap().parse::<f64>().unwrap(), q.unwrap().parse::<f64>().unwrap());
+    } else {
+        socket = setup_udp_socket(host, port, 0.0, 0.0);
+    }
 
     for filename in filenames {
-        download_file(socket.try_clone().unwrap(), filename);
+        download_file(socket.clone(), filename);
     }
 }
 
@@ -119,18 +127,21 @@ fn setup_progress_bar() -> ProgressBar<Stdout> {
     pb
 }
 
-fn setup_udp_socket(ip: IpAddr, port: u16) -> UdpSocket {
+/// Create a Loss Simulated Udp Socket based on the given markov parameters
+/// p, q.
+/// 
+fn setup_udp_socket(ip: IpAddr, port: u16, p: f64, q: f64) -> LossSimulationUdpSocket {
     let address = SocketAddr::new(ip, port);
-    let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind UDP socket");
+    let socket = LossSimulationUdpSocket::bind("0.0.0.0:0", p, q).expect("failed to bind UDP socket");
     socket
         .set_read_timeout(Some(Duration::from_secs(10)))
         .expect("Unable to set read timeout for socket");
-    socket.connect(address).expect("connection failed");
+    socket.connect(address).expect(format!("Unable to connect to host: {}", address).as_str());
     socket
 }
 
 
-fn download_file(socket: UdpSocket, filename: &str) {
+fn download_file(socket: LossSimulationUdpSocket, filename: &str) {
     let client = Arc::new(Client::init(
         socket,
         filename.to_string(),
