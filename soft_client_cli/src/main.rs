@@ -74,10 +74,9 @@ fn main() {
             Arg::with_name("migrate")
                 .short("m")
                 .long("migrate")
-                .value_name("MIGRATE")
+                .value_name("MILLISECONDS")
                 .help("specify the migration interval in milliseconds")
                 .takes_value(true)
-                .default_value("0")
         )
         .get_matches();
 
@@ -94,11 +93,6 @@ fn main() {
     let filenames = matches
         .values_of("file")
         .unwrap();
-    let migration = matches
-        .value_of("migrate")
-        .unwrap()
-        .parse::<u64>()
-        .expect("invalid migration period");
     let mut p: f64 = matches
         .value_of("markovp")
         .unwrap()
@@ -123,6 +117,8 @@ fn main() {
             .filter_level(LevelFilter::Info)
             .init();
     }
+
+    let migration_interval: Option<Duration> = matches.value_of("migrate").map(|str| Duration::from_millis(str.parse().expect("invalid m argument")));
 
     info!("Starting SOFT protocol client");
 
@@ -164,7 +160,7 @@ fn setup_progress_bar() -> ProgressBar<Stdout> {
 
 /// Create a Loss Simulated Udp Socket based on the given markov parameters
 /// p, q.
-///
+/// 
 fn setup_udp_socket(ip: IpAddr, port: u16, p: f64, q: f64) -> LossSimulationUdpSocket {
     let address = SocketAddr::new(ip, port);
     let socket = LossSimulationUdpSocket::bind("0.0.0.0:0", p, q).expect("failed to bind UDP socket");
