@@ -95,7 +95,7 @@ impl Display for ErrPacket {
             "Err {{ version: {},  connection_id: {}, error_code: {} }}",
             self.version(),
             self.connection_id(),
-            self.error_code() as u8,
+            self.error_code(),
         )
     }
 }
