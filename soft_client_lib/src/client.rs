@@ -22,7 +22,7 @@ use std::thread;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 const MAX_PACKET_SIZE: usize = 1200;
-const RECIEVE_WINDOW_THRESH: usize = 10;
+const RECEIVE_WINDOW_THRESH: usize = 10;
 const MB_1: usize = 2usize.pow(20);
 
 pub struct Client {
@@ -292,7 +292,7 @@ impl Client {
                 log::debug!("File Size: {}", p.file_size());
                 log::debug!("Checksum: {}", sha256_to_hex_string(p.checksum()));
                 send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                    RECIEVE_WINDOW_THRESH as u16,
+                    RECEIVE_WINDOW_THRESH as u16,
                     self.state.connection_id.load(SeqCst),
                     0,
                 ));
@@ -408,11 +408,12 @@ impl Client {
                         log::debug!("Initial RTT measurement: {:?}", self.state.rtt.load(SeqCst).unwrap());
                     }
 
-                    if self.migration != 0 && self.last_migration.load(SeqCst).unwrap().elapsed() > Duration::from_millis(self.migration) {
-                        self.migrate();
-                    }
-
-                    let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
+                log::debug!(
+                    "Initial RTT measurement: {:?}",
+                    self.state.rtt.load(SeqCst).unwrap()
+                );
+            }
+            let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
 
                     // TODO: Put this into own function to use it at ACK retransmission also
                     let bytes_buffered = download_buffer.buffer().len();
@@ -422,11 +423,11 @@ impl Client {
                     } else {
                         receive_window = (capacity - bytes_buffered) / MAX_PACKET_SIZE;
                     }
-                    receive_window = max(receive_window, RECIEVE_WINDOW_THRESH);
+                    receive_window = max(receive_window, RECEIVE_WINDOW_THRESH);
 
                     match unchecked_packet {
                         Err(UnsupportedSoftVersion(_)) => {
-                            eprintln!("received unsupported packet");
+                            log::error!("received unsupported packet");
                         }
                         Ok(Data(p)) => {
                             log::trace!("{}: received {}", p.connection_id(), p);
@@ -486,7 +487,9 @@ impl Client {
                 }
             }
         }
-        download_buffer.flush().expect("Error occoured when flushing writer");
+        download_buffer
+            .flush()
+            .expect("Error occured when flushing writer");
         return;
     }
 
