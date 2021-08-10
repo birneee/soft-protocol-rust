@@ -1,4 +1,7 @@
-#[derive(Debug, Copy, Clone, PartialEq, FromPrimitive)]
+use enum_display_derive::Display;
+use std::fmt::Display;
+
+#[derive(Debug, Copy, Clone, PartialEq, FromPrimitive, Display)]
 pub enum SoftErrorCode {
     Stop = 0,
     Internal = 1,
