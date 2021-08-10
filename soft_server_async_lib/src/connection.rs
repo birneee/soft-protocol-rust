@@ -39,7 +39,7 @@ use std::sync::atomic::Ordering::SeqCst;
 use soft_shared_async_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
 use std::convert::TryFrom;
 
-const PACKET_CHANNEL_SIZE: usize = 10;
+const PACKET_CHANNEL_SIZE: usize = 20;
 
 /// like normal SequenceNumber
 ///
@@ -398,11 +398,11 @@ impl Connection {
     }
 
     async fn effective_window(&self) -> u16 {
-        let max_window = self.max_window().await as i128;
+        let max_window = self.max_window().await;
         let last_packet_sent = *self.last_packet_sent.lock().await;
         let last_packet_acknowledged = self.last_packet_acknowledged().await;
-        let in_flight_packets = last_packet_sent.saturating_sub(last_packet_acknowledged);
-        return u16::try_from(max_window - in_flight_packets).unwrap_or(u16::MAX);
+        let in_flight_packets = u16::try_from(last_packet_sent.saturating_sub(last_packet_acknowledged)).unwrap_or(u16::MAX);
+        return max_window.saturating_sub(in_flight_packets)
     }
 
     async fn apply_rtt_sample(&self, rtt_sample: Duration) {

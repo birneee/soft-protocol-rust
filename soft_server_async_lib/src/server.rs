@@ -71,7 +71,13 @@ impl Server {
                 let mut receive_buffer = vec![0u8; SOFT_MAX_PACKET_SIZE];
                 let (size, src_addr) = socket.recv_from(&mut receive_buffer).await.unwrap();
                 receive_buffer.truncate(size);
-                let packet = PacketBuf::new(receive_buffer).unwrap();
+                let packet = match PacketBuf::new(receive_buffer) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        log::info!("received packet, caused by: {}", e);
+                        continue
+                    }
+                };
                 trace!("received {} from {}", packet, src_addr);
                 match &packet {
                     PacketBuf::Req(req) => {
