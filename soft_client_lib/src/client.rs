@@ -216,7 +216,6 @@ impl Client {
         {
             return;
         }
-
         let mut recv_buf = [0; MAX_PACKET_SIZE];
         let mut send_buf: PacketBuf;
 
@@ -408,12 +407,11 @@ impl Client {
                         log::debug!("Initial RTT measurement: {:?}", self.state.rtt.load(SeqCst).unwrap());
                     }
 
-                log::debug!(
-                    "Initial RTT measurement: {:?}",
-                    self.state.rtt.load(SeqCst).unwrap()
-                );
-            }
-            let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
+                    if self.migration != 0 && self.last_migration.load(SeqCst).unwrap().elapsed() > Duration::from_millis(self.migration) {
+                        self.migrate();
+                    }
+
+                    let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
 
                     // TODO: Put this into own function to use it at ACK retransmission also
                     let bytes_buffered = download_buffer.buffer().len();
@@ -438,8 +436,7 @@ impl Client {
                                     log::debug!("Reset RTT from {:?} to {:?}", self.state.rtt.load(SeqCst).unwrap(), self.state.initial_rtt.load(SeqCst).unwrap());
                                     self.state.rtt.store(self.state.initial_rtt.load(SeqCst), SeqCst);
                                     self.consecutive_timeouts_counter.store(0, SeqCst);
-                                }
-                                else {
+                                } else {
                                     self.consecutive_timeouts_counter.store(0, SeqCst);
                                 }
                                 self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
@@ -460,8 +457,7 @@ impl Client {
 
                                 progress = progress + p.data().len() as u64;
                                 self.state.transferred_bytes.store(progress, SeqCst);
-                            }
-                            else {
+                            } else {
                                 log::trace!("Received unexpected data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
                             }
                         }
