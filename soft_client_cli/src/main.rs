@@ -101,7 +101,6 @@ fn main() {
     }
 
     info!("Starting SOFT protocol client");
-    let socket;
 
     if p == 0.0 {
         p = q;
@@ -110,7 +109,7 @@ fn main() {
         q = p;
     }
 
-    socket = setup_udp_socket(host, port, p, q);
+    let socket = setup_udp_socket(host, port, p, q);
 
     for filename in filenames {
         let cloned_socket = socket.try_clone().expect("Unable to clone socket");
@@ -164,7 +163,6 @@ fn download_file(socket: LossSimulationUdpSocket, filename: &str) {
         client.run();
     });
 
-    let mut current_state: ClientStateType = Preparing;
     let mut stopped = false;
 
     let mut pb = setup_progress_bar();
@@ -172,39 +170,26 @@ fn download_file(socket: LossSimulationUdpSocket, filename: &str) {
         match client.state() {
             Preparing => {}
             Handshaking => {
-                // This handles the state changes alone.
-                if current_state == Preparing {
-                    pb.message(format!("{} -> Handshaking: ", &filename).as_str());
-                    current_state = Handshaking;
-                }
+                pb.message(format!("{} -> Handshaking: ", &filename).as_str());
                 pb.tick();
             }
             Downloading => {
-                // Handshaking can be very fast sometimes.
-                if current_state == Handshaking || current_state == Preparing {
-                    pb.total = client.file_size();
-                    pb.message(format!("{} -> Downloading: ", &filename).as_str());
-                    current_state = Downloading;
-                }
+                pb.total = client.file_size();
+                pb.message(format!("{} -> Downloading: ", &filename).as_str());
                 pb.set(client.progress());
                 pb.tick();
             }
             Validating => {
-                if current_state == Downloading {
-                    pb.message(format!("{} -> Validating: ", &filename).as_str());
-                    pb.set(client.file_size());
-                    pb.show_speed = false;
-                    current_state = Validating;
-                }
+                pb.message(format!("{} -> Validating: ", &filename).as_str());
+                pb.set(client.file_size());
+                pb.show_speed = false;
                 pb.tick();
             }
             Downloaded => {
-                if current_state == Downloading || current_state == Validating {
-                    pb.message(format!("{} -> Downloaded: ", &filename).as_str());
-                    pb.set(client.file_size());
-                    pb.show_speed = false;
-                    current_state = Downloaded;
-                }
+                pb.total = client.file_size();
+                pb.message(format!("{} -> Downloaded: ", &filename).as_str());
+                pb.set(client.file_size());
+                pb.show_speed = false;
                 stopped = true;
                 pb.finish_println("done\n");
             }
