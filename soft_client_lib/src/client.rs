@@ -69,8 +69,6 @@ impl Client {
                 log::error!("File already present");
                 state.state_type.store(ClientStateType::Downloaded, SeqCst);
             }
-        } else {
-            File::create(&filename).expect("Unable to create file");
         }
 
         Client {
@@ -361,6 +359,7 @@ impl Client {
         log::debug!("Starting download");
 
         let download_file = OpenOptions::new()
+            .create(true)
             .append(true)
             .open(&self.filename)
             .expect("Unable to open file for downloading.");

@@ -9,7 +9,7 @@ use crate::connection::Connection;
 use tokio::sync::Mutex;
 use std::sync::{Arc};
 use soft_shared_lib::times::{connection_timeout, INITIAL_RTT};
-use log::{info, debug};
+use log::{info, trace};
 use std::net::SocketAddr;
 use rand::Rng;
 use crate::file_sandbox::FileSandbox;
@@ -72,7 +72,7 @@ impl Server {
                 let (size, src_addr) = socket.recv_from(&mut receive_buffer).await.unwrap();
                 receive_buffer.truncate(size);
                 let packet = PacketBuf::new(receive_buffer).unwrap();
-                debug!("received {} from {}", packet, src_addr);
+                trace!("received {} from {}", packet, src_addr);
                 match &packet {
                     PacketBuf::Req(req) => {
                         let mut connections = connections.lock().await;
