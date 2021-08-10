@@ -1,6 +1,6 @@
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::Receiver;
-use log::{debug};
+use log::{debug, trace};
 use std::sync::Arc;
 use soft_shared_lib::packet::acc_packet::AccPacket;
 use soft_shared_lib::field_types::{ConnectionId, SequenceNumber, MaxPacketSize};
@@ -37,6 +37,7 @@ use soft_shared_lib::constants::SOFT_MAX_PACKET_SIZE;
 use std::sync::atomic::AtomicU16;
 use std::sync::atomic::Ordering::SeqCst;
 use soft_shared_async_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
+use std::convert::TryFrom;
 
 const PACKET_CHANNEL_SIZE: usize = 10;
 
@@ -91,7 +92,7 @@ impl Connection {
             Err(e) => {
                 let err = ErrPacket::new_buf(FileNotFound, 0);
                 socket.send_to(err.buf(), src_addr).await?;
-                debug!("sent {} to {}", &err, src_addr);
+                trace!("sent {} to {}", &err, src_addr);
                 return Err(e);
             }
         };
@@ -100,7 +101,7 @@ impl Connection {
         if req.offset() >= file_size {
             let err = ErrPacket::new_buf(InvalidOffset, 0);
             socket.send_to(err.buf(), src_addr).await?;
-            debug!("sent {} to {}", &err, src_addr);
+            trace!("sent {} to {}", &err, src_addr);
             return Err(ErrorType::InvalidRequest);
         }
 
@@ -109,7 +110,7 @@ impl Connection {
         } else {
             let err = ErrPacket::new_buf(ChecksumNotReady, 0);
             socket.send_to(err.buf(), src_addr).await?;
-            debug!("sent {} to {}", &err, src_addr);
+            trace!("sent {} to {}", &err, src_addr);
             return Err(error::ErrorType::ChecksumNotReady);
         };
 
@@ -119,14 +120,14 @@ impl Connection {
         if let std::io::Result::Err(e) = reader.seek(SeekFrom::Start(req.offset())).await {
             let err = ErrPacket::new_buf(Internal, 0);
             socket.send_to(err.buf(), src_addr).await?;
-            debug!("sent {} to {}", &err, src_addr);
+            trace!("sent {} to {}", &err, src_addr);
             return Err(IOError(e));
         }
 
         debug!("new connection {{ connection_id: {}, src_addr: {} }}", connection_id, src_addr);
         let acc = AccPacket::new_buf(connection_id, file_size, checksum);
         socket.send_to(acc.buf(), src_addr).await?;
-        debug!("sent {} to {}", &acc, src_addr);
+        trace!("sent {} to {}", &acc, src_addr);
         let acc_send_instant = Instant::now();
 
         let connection = Arc::new(Connection {
@@ -202,7 +203,7 @@ impl Connection {
                         let client_addr = (*self.client_addr.lock().await).clone();
                         let err = ErrPacket::new_buf(Internal, self.connection_id);
                         self.socket.send_to(err.buf(), client_addr).await?;
-                        debug!("sent {} to {}", &err, client_addr);
+                        trace!("sent {} to {}", &err, client_addr);
                         break;
                     }
                 };
@@ -270,17 +271,18 @@ impl Connection {
             if let Some(buf) = data_send_buffer.get(sequence_number) {
                 let client_addr = (*self.client_addr.lock().await).clone();
                 self.socket.send_to(&buf, client_addr).await.expect("failed to send packet");
-                debug!("sent {} to {}", Packet::from_buf(buf).unwrap(), client_addr);
+                trace!("sent {} to {}", Packet::from_buf(buf).unwrap(), client_addr);
                 *self.last_packet_sent.lock().await = sequence_number as i128;
             } else {
                 match self.read_next_data_packet(sequence_number).await {
                     Err(e) => {
                         match e {
                             Eof => {
-                                //TODO handle end of file
+                                // ignore sequence number, and stop sending
                                 break
                             }
                             _ => {
+                                // unexpected error
                                 return Err(e);
                             }
                         }
@@ -289,7 +291,7 @@ impl Connection {
                     Ok(packet) => {
                         let client_addr = (*self.client_addr.lock().await).clone();
                         self.socket.send_to(packet.buf(), client_addr).await.expect("failed to send packet");
-                        debug!("sent {} to {}", packet, client_addr);
+                        trace!("sent {} to {}", packet, client_addr);
                         //TODO circumvent copy
                         let send_buf = data_send_buffer.add();
                         send_buf.write(packet.buf()).unwrap();
@@ -399,7 +401,8 @@ impl Connection {
         let max_window = self.max_window().await as i128;
         let last_packet_sent = *self.last_packet_sent.lock().await;
         let last_packet_acknowledged = self.last_packet_acknowledged().await;
-        return (max_window - (last_packet_sent - last_packet_acknowledged)) as u16
+        let in_flight_packets = last_packet_sent.saturating_sub(last_packet_acknowledged);
+        return u16::try_from(max_window - in_flight_packets).unwrap_or(u16::MAX);
     }
 
     async fn apply_rtt_sample(&self, rtt_sample: Duration) {
