@@ -142,7 +142,7 @@ fn setup_udp_socket(ip: IpAddr, port: u16, p: f64, q: f64) -> LossSimulationUdpS
     socket
         .set_read_timeout(Some(Duration::from_secs(60)))
         .expect("Unable to set read timeout for socket");
-    let _ = socket.connect(address);
+    socket.connect(address).unwrap();
     socket
 }
 
