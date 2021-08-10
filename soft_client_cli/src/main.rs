@@ -163,8 +163,6 @@ fn download_file(socket: LossSimulationUdpSocket, filename: &str) {
         client.run();
     });
 
-    let mut stopped = false;
-
     let mut pb = setup_progress_bar();
     loop {
         match client.state() {
@@ -180,6 +178,7 @@ fn download_file(socket: LossSimulationUdpSocket, filename: &str) {
                 pb.tick();
             }
             Validating => {
+                pb.total = client.file_size();
                 pb.message(format!("{} -> Validating: ", &filename).as_str());
                 pb.set(client.file_size());
                 pb.show_speed = false;
@@ -190,21 +189,21 @@ fn download_file(socket: LossSimulationUdpSocket, filename: &str) {
                 pb.message(format!("{} -> Downloaded: ", &filename).as_str());
                 pb.set(client.file_size());
                 pb.show_speed = false;
-                stopped = true;
                 pb.finish_println("done\n");
+                break // stopped
             }
             Stopped => {
-                stopped = true;
-                pb.finish()
+                pb.message(format!("{} -> Stopped: ", &filename).as_str());
+                pb.show_speed = false;
+                break // stopped
             }
             Error => {
-                stopped = true;
+                pb.message(format!("{} -> Error: ", &filename).as_str());
+                pb.show_speed = false;
+                break // stopped
             }
         }
-        if stopped {
-            break;
-        }
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(100));
     }
     handle.join().unwrap();
 }
