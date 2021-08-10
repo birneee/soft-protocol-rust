@@ -70,6 +70,14 @@ fn main() {
                 .help("client prints execution details and packet traces")
                 .takes_value(false),
         )
+        .arg(
+            Arg::with_name("migrate")
+                .short("m")
+                .long("migrate")
+                .value_name("MILLISECONDS")
+                .help("specify the migration interval in milliseconds")
+                .takes_value(true)
+        )
         .get_matches();
 
     let host = matches
@@ -99,6 +107,8 @@ fn main() {
             .filter_level(LevelFilter::Info)
             .init();
     }
+
+    let migration_interval: Option<Duration> = matches.value_of("migrate").map(|str| Duration::from_millis(str.parse().expect("invalid m argument")));
 
     info!("Starting SOFT protocol client");
 
