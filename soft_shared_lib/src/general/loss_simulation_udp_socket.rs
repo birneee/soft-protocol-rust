@@ -2,6 +2,7 @@ use std::net::{UdpSocket, ToSocketAddrs, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::atomic::Ordering::SeqCst;
 use std::time::Duration;
+use core::mem;
 
 /// Wraps a normal UdpSocket
 ///
@@ -103,6 +104,11 @@ impl LossSimulationUdpSocket {
             last_packet_lost: AtomicBool::new(self.last_packet_lost.load(SeqCst)),
             packet_losses: AtomicU32::new(self.packet_losses.load(SeqCst))
         })
+    }
+
+
+    pub fn swap_socket(&mut self, new_socket: UdpSocket) -> UdpSocket {
+        mem::replace(&mut self.inner, new_socket)
     }
 
 }
