@@ -26,6 +26,9 @@ impl FileSandbox {
         if !path.starts_with(&self.served_dir){
             return Err(ErrorType::FileNotFound);
         }
+        if path.is_dir() {
+            return Err(ErrorType::FileNotFound);
+        }
         return Ok(File::open(path).await?);
     }
 }
