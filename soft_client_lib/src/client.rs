@@ -29,14 +29,15 @@ pub struct Client {
     state: Arc<ClientState>,
     filename: String,
     offset: Atomic<Offset>,
-    migration: u8,
+    migration: u64,
     initial_ack: Atomic<Option<Instant>>,
-    ack_timeout: Atomic<Option<Instant>>
+    last_migration: Atomic<Option<Instant>>,
+    consecutive_timeouts_counter: Atomic<u8>
 }
 
 impl Client {
     //TODO: Implement timeout for case of server unreachability
-    pub fn init(socket: UdpSocket, filename: String, migration: u8) -> Client {
+    pub fn init(socket: UdpSocket, filename: String, migration: u64) -> Client {
         let state = Arc::new(ClientState::new(socket));
         let download_buffer: File;
         let offset = Atomic::new(0);
@@ -78,7 +79,8 @@ impl Client {
             offset,
             migration,
             initial_ack: Atomic::new(None),
-            ack_timeout: Atomic::new(None)
+            last_migration: Atomic::new(None),
+            consecutive_timeouts_counter: Atomic::new(0)
         }
     }
 
@@ -302,7 +304,7 @@ impl Client {
 
                 // First Ack Sent. Store instance now.
                 self.initial_ack.store(Some(Instant::now()), SeqCst);
-                self.ack_timeout.store(Some(Instant::now()), SeqCst);
+                self.last_migration.store(Some(Instant::now()), SeqCst);
 
                 log::debug!("Handshake successfully completed");
             }
@@ -385,7 +387,6 @@ impl Client {
 
             match packet_size {
                 Ok(packet_size) => {
-                    // TODO: rtt should be adapted dynamically during the connection
                     // Store rtt measurement on the socket and set socket timeout
                     if self.state.sequence_nr.load(SeqCst) == 0 {
                         self.state.rtt.store(
@@ -393,11 +394,11 @@ impl Client {
                             SeqCst,
                         );
                         let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap()));
+                        self.state.initial_rtt.store(self.state.rtt.load(SeqCst), SeqCst);
                         log::debug!("Initial RTT measurement: {:?}", self.state.rtt.load(SeqCst).unwrap());
                     }
 
-                    // TODO: Change this to use timeout interval
-                    if self.ack_timeout.load(SeqCst).unwrap().elapsed() > 2 * self.state.rtt.load(SeqCst).unwrap() {
+                    if self.migration != 0 && self.last_migration.load(SeqCst).unwrap().elapsed() > Duration::from_millis(self.migration) {
                         self.migrate();
                     }
 
@@ -420,8 +421,20 @@ impl Client {
                         Ok(Data(p)) => {
                             log::trace!("{}: received {}", p.connection_id(), p);
                             if p.sequence_number() == self.state.sequence_nr.load(SeqCst) {
+                                // This matches if the received packets matches the expected packet
+                                // Receiving an expected packet resets the rtt to the initial value
+                                if self.consecutive_timeouts_counter.load(SeqCst) >= 3 {
+                                    log::debug!("Reset RTT from {:?} to {:?}", self.state.rtt.load(SeqCst).unwrap(), self.state.initial_rtt.load(SeqCst).unwrap());
+                                    self.state.rtt.store(self.state.initial_rtt.load(SeqCst), SeqCst);
+                                    self.consecutive_timeouts_counter.store(0, SeqCst);
+                                }
+                                else {
+                                    self.consecutive_timeouts_counter.store(0, SeqCst);
+                                }
                                 self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
+
                                 let _ = download_buffer.write_all(p.data()).unwrap();
+
                                 let send_buf = PacketBuf::Ack(AckPacket::new_buf(
                                     receive_window as u16,
                                     connection_id,
@@ -436,10 +449,9 @@ impl Client {
 
                                 progress = progress + p.data().len() as u64;
                                 self.state.transferred_bytes.store(progress, SeqCst);
-                                self.ack_timeout.store(Option::Some(Instant::now()), SeqCst);
                             }
                             else {
-                                log::trace!("Received duplicate data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
+                                log::trace!("Received unexpected data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
                             }
                         }
                         Ok(Packet::Err(e)) => self.handle_error(e),
@@ -453,14 +465,14 @@ impl Client {
                         connection_id,
                         self.state.sequence_nr.load(SeqCst),
                     ));
+
                     let _ = self.state.socket
                         .read()
                         .unwrap()
                         .send(send_buf.buf());
-                    self.ack_timeout.store(Option::Some(Instant::now()), SeqCst);
-                    let old_rtt = self.state.rtt.load(SeqCst).unwrap();
-                    self.state.rtt.store(Some(2 * old_rtt), SeqCst);
-                    let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap()));
+
+                    // Adapt RTT
+                    self.check_timeout();
                 }
             }
         }
@@ -493,6 +505,24 @@ impl Client {
         *lock = new_socket;
         drop(lock);
         self.state.socket.read().unwrap().connect(server_addr).expect("Reconnection to server failed");
-        //self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap()));
+        self.last_migration.store(Some(Instant::now()), SeqCst);
+        let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap()));
+    }
+
+    fn check_timeout(&self) -> bool {
+        let old_timeout_value = self.consecutive_timeouts_counter.load(SeqCst);
+        let new_timeout_value = old_timeout_value + 1;
+
+        if new_timeout_value > 0 && new_timeout_value % 3 == 0 {
+            let old_rtt = self.state.rtt.load(SeqCst).unwrap();
+            self.state.rtt.store(Some(2 * old_rtt), SeqCst);
+            log::debug!("Updated RTT to {:?}", self.state.rtt.load(SeqCst).unwrap());
+            let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap()));
+            self.consecutive_timeouts_counter.store(new_timeout_value, SeqCst);
+            return true;
+        } else {
+            self.consecutive_timeouts_counter.store(new_timeout_value, SeqCst);
+            return false;
+        }
     }
 }

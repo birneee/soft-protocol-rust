@@ -72,7 +72,7 @@ fn main() {
                 .short("m")
                 .long("migrate")
                 .value_name("MIGRATE")
-                .help("specify the migration interval")
+                .help("specify the migration interval in milliseconds")
                 .takes_value(true)
                 .default_value("0")
         )
@@ -94,7 +94,7 @@ fn main() {
     let migration = matches
         .value_of("migrate")
         .unwrap()
-        .parse::<u8>()
+        .parse::<u64>()
         .expect("invalid migration period");
 
     if matches.is_present("verbose") {
@@ -146,7 +146,7 @@ fn setup_udp_socket(ip: IpAddr, port: u16) -> UdpSocket {
 }
 
 
-fn download_file(socket: UdpSocket, filename: &str, migration: u8) {
+fn download_file(socket: UdpSocket, filename: &str, migration: u64) {
     let client = Arc::new(Client::init(
         socket,
         filename.to_string(),
