@@ -21,7 +21,7 @@ use std::time::Instant;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 const MAX_PACKET_SIZE: usize = 1200;
-const RECIEVE_WINDOW_THRESH: usize = 10;
+const RECEIVE_WINDOW_THRESH: usize = 10;
 const MB_1: usize = 2usize.pow(20);
 
 pub struct Client {
@@ -280,7 +280,7 @@ impl Client {
                 log::debug!("File Size: {}", p.file_size());
                 log::debug!("Checksum: {}", sha256_to_hex_string(p.checksum()));
                 send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                    RECIEVE_WINDOW_THRESH as u16,
+                    RECEIVE_WINDOW_THRESH as u16,
                     self.state.connection_id.load(SeqCst),
                     0,
                 ));
@@ -410,7 +410,7 @@ impl Client {
             } else {
                 recieve_window = (capacity - bytes_buffered) / MAX_PACKET_SIZE;
             }
-            recieve_window = max(recieve_window, RECIEVE_WINDOW_THRESH);
+            recieve_window = max(recieve_window, RECEIVE_WINDOW_THRESH);
 
             match unchecked_packet {
                 Err(UnsupportedSoftVersion(_)) => {
@@ -422,7 +422,7 @@ impl Client {
                         self.state
                             .sequence_nr
                             .store(p.sequence_number() + 1, SeqCst);
-                        let _ = download_buffer.write_all(p.data()).unwrap();
+                        download_buffer.write_all(p.data()).unwrap();
                         let send_buf = PacketBuf::Ack(AckPacket::new_buf(
                             recieve_window as u16,
                             connection_id,
@@ -458,14 +458,14 @@ impl Client {
                     connection_id,
                     self.state.sequence_nr.load(SeqCst),
                 ));
-                let _ = self.state.socket.send(send_buf.buf());
+                self.state.socket.send(send_buf.buf()).unwrap();
                 self.ack_timeout.store(Option::Some(Instant::now()), SeqCst);
             }
         }
 
         download_buffer
             .flush()
-            .expect("Error occoured when flushing writer");
+            .expect("Error occurred when flushing writer");
     }
 
     pub fn state(&self) -> ClientStateType {
