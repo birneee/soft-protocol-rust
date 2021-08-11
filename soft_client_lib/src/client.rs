@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::time::{Instant, Duration};
 use std::thread;
 use std::net::UdpSocket;
+use soft_shared_lib::times::ack_packet_retransmission_timeout;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 const MAX_PACKET_SIZE: usize = 1200;
@@ -380,11 +381,10 @@ impl Client {
 
         let mut receive_window;
         let mut recv_buf = [0; MAX_PACKET_SIZE];
-        let mut progress = self.state.transferred_bytes.load(SeqCst);
         let file_size = self.state.filesize.load(SeqCst);
         let connection_id = self.state.connection_id.load(SeqCst);
 
-        while progress != file_size
+        while self.state.transferred_bytes.load(SeqCst) != file_size
             && self.state.state_type.load(SeqCst) == ClientStateType::Downloading
         {
             // Reader has a timeout set at various points
@@ -398,10 +398,10 @@ impl Client {
                     // Store rtt measurement on the socket and set socket timeout
                     if self.state.sequence_nr.load(SeqCst) == 0 {
                         self.state.rtt.store(
-                            Some(max(self.initial_ack.load(SeqCst).unwrap().elapsed(), Duration::from_millis(1))),
+                            Some(self.initial_ack.load(SeqCst).unwrap().elapsed()),
                             SeqCst,
                         );
-                        self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap())).unwrap();
+                        self.state.socket.read().unwrap().set_read_timeout(Some(ack_packet_retransmission_timeout(self.state.rtt.load(SeqCst).unwrap()))).unwrap();
                         log::debug!("Initial RTT measurement: {:?}", self.state.rtt.load(SeqCst).unwrap());
                     }
 
@@ -438,8 +438,7 @@ impl Client {
                                     .unwrap()
                                     .send(send_buf.buf()).unwrap();
 
-                                progress = progress + p.data().len() as u64;
-                                self.state.transferred_bytes.store(progress, SeqCst);
+                                self.state.transferred_bytes.fetch_add(p.data().len() as u64, SeqCst);
                             } else if p.sequence_number() > self.state.sequence_nr.load(SeqCst) {
                                 log::trace!("Received unexpected data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
                                 let packet = PacketBuf::Ack(AckPacket::new_buf(
@@ -456,7 +455,8 @@ impl Client {
                     }
                 }
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                    log::trace!("Exceeded 3 * RTT, resending ACK [sequence_number: {:?}]", self.state.sequence_nr.load(SeqCst));
+                    // The ACK Retransmission Timeout is important for migration
+                    log::debug!("ACK Retransmission Timeout, resending ACK [sequence_number: {:?}]", self.state.sequence_nr.load(SeqCst));
                     // Calculate current receive window
                     receive_window = self.calculate_recv_window(&mut download_buffer);
                     let send_buf = PacketBuf::Ack(AckPacket::new_buf(
