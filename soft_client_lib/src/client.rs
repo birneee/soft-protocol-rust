@@ -436,7 +436,7 @@ impl Client {
                                 }
                                 self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
 
-                                let _ = download_buffer.write_all(p.data()).unwrap();
+                                download_buffer.write_all(p.data()).unwrap();
 
                                 let send_buf = PacketBuf::Ack(AckPacket::new_buf(
                                     receive_window as u16,
