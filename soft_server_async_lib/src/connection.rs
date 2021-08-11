@@ -39,6 +39,7 @@ use std::sync::atomic::Ordering::SeqCst;
 use soft_shared_async_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
 use std::convert::TryFrom;
 
+//TODO replace with non blocking replacing channel
 const PACKET_CHANNEL_SIZE: usize = 20;
 
 /// like normal SequenceNumber

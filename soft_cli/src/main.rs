@@ -82,6 +82,15 @@ fn main() {
                 .requires("server")
                 .takes_value(true)
         )
+        .arg(
+            Arg::with_name("migrate")
+                .short("m")
+                .long("migrate")
+                .value_name("MILLISECONDS")
+                .conflicts_with("server")
+                .help("specify the migration interval in milliseconds")
+                .takes_value(true)
+        )
         .get_matches();
 
         if matches.is_present("server") {
