@@ -2,9 +2,7 @@
 members = [
     "soft_shared_lib",
     "soft_shared_async_lib",
-    "soft_server_async_lib",
+    "soft_server_lib",
     "soft_client_lib",
-    "soft_server_cli",
-    "soft_client_cli",
     "soft_cli",
 ]

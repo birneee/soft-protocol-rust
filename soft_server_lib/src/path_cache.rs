@@ -39,16 +39,16 @@ impl CongestionState {
     }
 }
 
-/// stores congestion information
+/// stores congestion and rtt information, independent from the connection
 ///
 /// entries expire after some time
-pub struct CongestionCache {
+pub struct PathCache {
     cache: Mutex<TtlCache<SocketAddr, CongestionState>>,
 }
 
-impl CongestionCache {
-    pub fn new() -> CongestionCache {
-        return CongestionCache {
+impl PathCache {
+    pub fn new() -> PathCache {
+        return PathCache {
             cache: Mutex::new(TtlCache::new(MAX_SIMULTANEOUS_CONNECTIONS)),
         }
     }

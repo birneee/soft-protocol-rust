@@ -14,7 +14,7 @@ use std::net::SocketAddr;
 use rand::Rng;
 use crate::file_sandbox::FileSandbox;
 use crate::checksum_cache::ChecksumCache;
-use crate::congestion_cache::CongestionCache;
+use crate::path_cache::PathCache;
 use core::mem;
 use tokio::task::JoinHandle;
 use std::ops::Deref;
@@ -29,7 +29,7 @@ pub struct Server {
     connections: Arc<Mutex<TtlCache<ConnectionId, Arc<Connection>>>>,
     file_sandbox: Arc<FileSandbox>,
     checksum_cache: Arc<ChecksumCache>,
-    congestion_cache: Arc<CongestionCache>,
+    congestion_cache: Arc<PathCache>,
  }
 
 impl Server {
@@ -46,7 +46,7 @@ impl Server {
             connections: Arc::new(Mutex::new(TtlCache::new(MAX_SIMULTANEOUS_CONNECTIONS))),
             file_sandbox: Arc::new(FileSandbox::new(served_dir.clone())),
             checksum_cache: ChecksumCache::new(),
-            congestion_cache: Arc::new(CongestionCache::new()),
+            congestion_cache: Arc::new(PathCache::new()),
         };
 
         info!(
