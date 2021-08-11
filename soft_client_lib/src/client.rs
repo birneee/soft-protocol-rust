@@ -444,7 +444,7 @@ impl Client {
                                 let packet = PacketBuf::Ack(AckPacket::new_buf(
                                     receive_window as u16,
                                     connection_id,
-                                    p.sequence_number() + 1,
+                                    self.state.sequence_nr.load(SeqCst),
                                 ));
                                 log::trace!("{}: sending {}", p.connection_id(), packet);
                                 self.state.socket.read().unwrap().send(packet.buf()).unwrap();
@@ -494,7 +494,7 @@ impl Client {
         return self.state.filesize.load(SeqCst);
     }
 
-    pub fn migrate(&self) {
+    fn migrate(&self) {
         let server_address = self.state.socket.read().unwrap().peer_addr().unwrap();
         let new_socket = UdpSocket::bind("0.0.0.0:0").unwrap();
         log::debug!("Client migrating from {} to {}", self.state.socket.read().unwrap().local_addr().unwrap(), new_socket.local_addr().unwrap());
