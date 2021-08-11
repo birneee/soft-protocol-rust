@@ -424,7 +424,7 @@ impl Client {
                                 // This matches if the received packets matches the expected packet
                                 self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
 
-                                let _ = download_buffer.write_all(p.data()).unwrap();
+                                download_buffer.write_all(p.data()).unwrap();
 
                                 let send_buf = PacketBuf::Ack(AckPacket::new_buf(
                                     receive_window as u16,
@@ -433,10 +433,10 @@ impl Client {
                                 ));
 
                                 log::trace!("{}: sending {}", p.connection_id(), send_buf);
-                                let _ = self.state.socket
+                                self.state.socket
                                     .read()
                                     .unwrap()
-                                    .send(send_buf.buf());
+                                    .send(send_buf.buf()).unwrap();
 
                                 progress = progress + p.data().len() as u64;
                                 self.state.transferred_bytes.store(progress, SeqCst);
@@ -469,6 +469,9 @@ impl Client {
                         .read()
                         .unwrap()
                         .send(send_buf.buf()).unwrap();
+                }
+                Err(e) => {
+                    log::error!("unexpected error, caused by: {}", e);
                 }
             }
         }
