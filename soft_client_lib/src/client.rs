@@ -511,7 +511,7 @@ impl Client {
         drop(lock);
         self.state.socket.read().unwrap().connect(server_address).expect("Reconnection to server failed");
         self.last_migration.store(Some(Instant::now()), SeqCst);
-        let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.current_rtt.load(SeqCst).unwrap()));
+        self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.current_rtt.load(SeqCst).unwrap())).unwrap();
     }
 
     fn check_timeout(&self) -> bool {
