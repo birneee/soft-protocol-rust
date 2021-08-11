@@ -470,10 +470,10 @@ impl Client {
                         self.state.sequence_nr.load(SeqCst),
                     ));
 
-                    let _ = self.state.socket
+                    self.state.socket
                         .read()
                         .unwrap()
-                        .send(send_buf.buf());
+                        .send(send_buf.buf()).unwrap();
 
                     // Adapt RTT
                     self.check_timeout();
