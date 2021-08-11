@@ -644,6 +644,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 
 [[package]]
+name = "soft_cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "env_logger",
+ "log",
+ "signal-hook",
+ "soft_client_lib",
+ "soft_server_async_lib",
+ "soft_shared_lib",
+]
+
+[[package]]
 name = "soft_client_cli"
 version = "0.1.0"
 dependencies = [
@@ -709,6 +722,7 @@ version = "0.1.0"
 dependencies = [
  "byteorder",
  "hex-literal",
+ "log",
  "num",
  "num-derive",
  "num-traits",

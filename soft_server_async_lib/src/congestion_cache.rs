@@ -5,7 +5,6 @@ use std::sync::{Mutex};
 use log::debug;
 use ttl_cache::TtlCache;
 use crate::server::MAX_SIMULTANEOUS_CONNECTIONS;
-use std::cmp::max;
 
 pub type CongestionWindow = u16; // same size as receive window
 
@@ -15,8 +14,7 @@ const INITIAL_AVOIDANCE_THRESHOLD: f64 = f64::INFINITY;
 const CONGESTION_ALPHA: f64 = 1.0;
 /// factor for decreasing the congestion window
 const CONGESTION_BETA: f64 = 0.5;
-const RTT_MOVING_AVERAGE_GAMMA: f64 = 0.9;
-const MIN_RTT: Duration = Duration::from_millis(1);
+const RTT_MOVING_AVERAGE_GAMMA: f64 = 0.5;
 
 #[derive(PartialEq, Clone)]
 pub struct CongestionState {
@@ -66,12 +64,10 @@ impl CongestionCache {
     pub fn apply_rtt_sample(&self, addr: SocketAddr, rtt_sample: Duration) {
         self.update(addr, |congestion_state| {
             if *congestion_state == CongestionState::initial() {
-                congestion_state.current_rtt = max(rtt_sample, MIN_RTT);
+                congestion_state.current_rtt = rtt_sample;
             } else {
-                congestion_state.current_rtt = max(
-                    congestion_state.current_rtt.mul_f64(RTT_MOVING_AVERAGE_GAMMA) + rtt_sample.mul_f64(1.0 - RTT_MOVING_AVERAGE_GAMMA),
-                    MIN_RTT
-                );
+                congestion_state.current_rtt =
+                    congestion_state.current_rtt.mul_f64(RTT_MOVING_AVERAGE_GAMMA) + rtt_sample.mul_f64(1.0 - RTT_MOVING_AVERAGE_GAMMA);
             }
             debug!("updated rtt of {} to {:?}", addr, congestion_state.current_rtt);
         });

@@ -1,12 +1,14 @@
 use atomic::Atomic;
-use soft_shared_lib::{field_types::Checksum, general::loss_simulation_udp_socket::LossSimulationUdpSocket};
+use soft_shared_lib::field_types::Checksum;
+use soft_shared_lib::general::loss_simulation_udp_socket::LossSimulationUdpSocket;
 use std::time::Duration;
+use std::sync::RwLock;
 
 pub struct ClientState {
     pub state_type: Atomic<ClientStateType>,
     /// number of received bytes
     pub transferred_bytes: Atomic<u64>,
-    pub socket: LossSimulationUdpSocket,
+    pub socket: RwLock<LossSimulationUdpSocket>,
     pub connection_id: Atomic<u32>,
     pub sequence_nr: Atomic<u64>,
     pub checksum: Atomic<Option<Checksum>>,
@@ -21,7 +23,7 @@ impl ClientState {
         ClientState {
             state_type: Atomic::new(ClientStateType::Preparing),
             transferred_bytes: Atomic::new(0),
-            socket,
+            socket: RwLock::new(socket),
             connection_id: Atomic::new(32),
             sequence_nr: Atomic::new(0),
             checksum: Atomic::new(None),

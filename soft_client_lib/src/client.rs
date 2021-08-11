@@ -17,7 +17,10 @@ use std::os::unix::prelude::MetadataExt;
 use std::path::Path;
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, Duration};
+use std::thread;
+use std::net::UdpSocket;
+use soft_shared_lib::times::ack_packet_retransmission_timeout;
 
 pub const SUPPORTED_PROTOCOL_VERSION: u8 = 1;
 const MAX_PACKET_SIZE: usize = 1200;
@@ -28,16 +31,18 @@ pub struct Client {
     state: Arc<ClientState>,
     filename: String,
     offset: Atomic<Offset>,
+    migration: Option<Duration>,
     initial_ack: Atomic<Option<Instant>>,
-    ack_timeout: Atomic<Option<Instant>>,
+    last_migration: Atomic<Option<Instant>>,
 }
 
 impl Client {
     //TODO: Implement timeout for case of server unreachability
-    pub fn init(socket: LossSimulationUdpSocket, filename: String) -> Client {
+    pub fn init(socket: LossSimulationUdpSocket, filename: String, migration: Option<Duration>) -> Client {
         let state = Arc::new(ClientState::new(socket));
         let download_buffer: File;
         let offset = Atomic::new(0);
+        let migration = migration;
 
         log::debug!("Creating client to get file {}", filename);
         state.state_type.store(ClientStateType::Preparing, SeqCst);
@@ -71,8 +76,9 @@ impl Client {
             state,
             filename,
             offset,
+            migration,
             initial_ack: Atomic::new(None),
-            ack_timeout: Atomic::new(None),
+            last_migration: Atomic::new(None),
         }
     }
 
@@ -155,6 +161,7 @@ impl Client {
     /// With an offset of 0
     ///
     fn handshake(&self) {
+        // TODO: Add handshake timeout
         self.make_handshake();
 
         if self.state.file_changed.load(SeqCst) == true {
@@ -177,7 +184,9 @@ impl Client {
                 );
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::ChecksumNotReady => {
-                log::error!("Checksum Not Ready, aborting download of {}", self.filename);
+                log::error!("Checksum Not Ready, retrying download of {} in 5 seconds", self.filename);
+                thread::sleep(Duration::from_secs(5));
+                self.run();
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::InvalidOffset => {
                 log::error!(
@@ -208,7 +217,6 @@ impl Client {
         {
             return;
         }
-
         let mut recv_buf = [0; MAX_PACKET_SIZE];
         let mut send_buf: PacketBuf;
 
@@ -222,12 +230,15 @@ impl Client {
             .state_type
             .store(ClientStateType::Handshaking, SeqCst);
 
+        log::trace!("{}: sending {}", self.state.connection_id.load(SeqCst), send_buf);
         self.state
             .socket
+            .read()
+            .unwrap()
             .send(send_buf.buf())
             .expect("couldn't send message");
-                
-        match self.state.socket.recv(&mut recv_buf) {
+
+        match self.state.socket.read().unwrap().recv(&mut recv_buf) {
             Ok(_) => (),
             Err(e) if e.kind() == ErrorKind::WouldBlock => {
                 log::error!("Connection Timed out");
@@ -254,6 +265,7 @@ impl Client {
                 return;
             }
             Ok(Acc(p)) => {
+                log::trace!("{}: received {}", self.state.connection_id.load(SeqCst), p);
                 if let Some(checksum) = self.state.checksum.load(SeqCst) {
                     if p.checksum() != checksum {
                         log::debug!(
@@ -284,14 +296,18 @@ impl Client {
                     self.state.connection_id.load(SeqCst),
                     0,
                 ));
+
+                log::trace!("{}: sending {}", self.state.connection_id.load(SeqCst), send_buf);
                 self.state
                     .socket
+                    .read()
+                    .unwrap()
                     .send(send_buf.buf())
                     .expect("couldn't send message");
 
                 // First Ack Sent. Store instance now.
                 self.initial_ack.store(Some(Instant::now()), SeqCst);
-                self.ack_timeout.store(Some(Instant::now()), SeqCst);
+                self.last_migration.store(Some(Instant::now()), SeqCst);
 
                 log::debug!("Handshake successfully completed");
             }
@@ -359,113 +375,110 @@ impl Client {
             .open(&self.filename)
             .expect("Unable to open file for downloading.");
         let mut download_buffer = BufWriter::with_capacity(MB_1, download_file);
-        let capacity = MB_1;
         download_buffer
             .seek(SeekFrom::Start(self.offset.load(SeqCst)))
             .expect("Unable to seek to offset");
 
-        let mut recieve_window;
+        let mut receive_window;
         let mut recv_buf = [0; MAX_PACKET_SIZE];
-        let mut progress = self.state.transferred_bytes.load(SeqCst);
         let file_size = self.state.filesize.load(SeqCst);
         let connection_id = self.state.connection_id.load(SeqCst);
 
-        while progress != file_size
+        while self.state.transferred_bytes.load(SeqCst) != file_size
             && self.state.state_type.load(SeqCst) == ClientStateType::Downloading
         {
-            let packet_size = match self.state.socket.recv(&mut recv_buf) {
-                Ok(packet_size) => packet_size,
-                Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                    log::error!("Connection Timed out");
-                    self.state.state_type.store(ClientStateType::Error, SeqCst);
-                    return;
-                }
-                Err(e) => {
-                    log::error!("Unknown Error Occoured: {}", e);
-                    self.state.state_type.store(ClientStateType::Error, SeqCst);
-                    return;
-                }
-            };
+            // Reader has a timeout set at various points
+            let packet_size = self.state.socket
+                .read()
+                .unwrap()
+                .recv(&mut recv_buf);
 
-            // Store rtt measurement in the state.
-            if self.state.sequence_nr.load(SeqCst) == 0 {
-                self.state.rtt.store(
-                    Some(self.initial_ack.load(SeqCst).unwrap().elapsed()),
-                    SeqCst,
-                );
-
-                log::debug!(
-                    "Initial RTT measurement: {:?}",
-                    self.state.rtt.load(SeqCst).unwrap()
-                );
-            }
-            let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
-
-            let bytes_buffered = download_buffer.buffer().len();
-            if capacity - bytes_buffered < MAX_PACKET_SIZE {
-                download_buffer
-                    .flush()
-                    .expect("Unable to flush data from writer buffer");
-                recieve_window = capacity / MAX_PACKET_SIZE;
-            } else {
-                recieve_window = (capacity - bytes_buffered) / MAX_PACKET_SIZE;
-            }
-            recieve_window = max(recieve_window, RECEIVE_WINDOW_THRESH);
-
-            match unchecked_packet {
-                Err(UnsupportedSoftVersion(_)) => {
-                    log::error!("received unsupported packet");
-                }
-                Ok(Data(p)) => {
-                    log::trace!("received {}", p);
-                    if p.sequence_number() == self.state.sequence_nr.load(SeqCst) {
-                        self.state
-                            .sequence_nr
-                            .store(p.sequence_number() + 1, SeqCst);
-                        download_buffer.write_all(p.data()).unwrap();
-                        let send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                            recieve_window as u16,
-                            connection_id,
-                            p.sequence_number() + 1,
-                        ));
-
-                        log::trace!("sending {}", send_buf);
-                        self.state.socket.send(send_buf.buf()).unwrap();
-
-                        progress = progress + p.data().len() as u64;
-                        self.state.transferred_bytes.store(progress, SeqCst);
-                        self.ack_timeout.store(Option::Some(Instant::now()), SeqCst);
-                    } else {
-                        log::trace!(
-                            "Received duplicate data packet: Expected {:?}, Got: {:?}",
-                            self.state.sequence_nr.load(SeqCst),
-                            p.sequence_number()
+            match packet_size {
+                Ok(packet_size) => {
+                    // Store rtt measurement on the socket and set socket timeout
+                    if self.state.sequence_nr.load(SeqCst) == 0 {
+                        self.state.rtt.store(
+                            Some(self.initial_ack.load(SeqCst).unwrap().elapsed()),
+                            SeqCst,
                         );
+                        self.state.socket.read().unwrap().set_read_timeout(Some(ack_packet_retransmission_timeout(self.state.rtt.load(SeqCst).unwrap()))).unwrap();
+                        log::debug!("Initial RTT measurement: {:?}", self.state.rtt.load(SeqCst).unwrap());
+                    }
+
+                    if !self.migration.is_none() && self.last_migration.load(SeqCst).unwrap().elapsed() > self.migration.unwrap() {
+                        self.migrate();
+                    }
+
+                    let unchecked_packet = Packet::from_buf(&mut recv_buf[0..packet_size]);
+
+                    // Calculate current receive window
+                    receive_window = self.calculate_recv_window(&mut download_buffer);
+
+                    match unchecked_packet {
+                        Err(UnsupportedSoftVersion(_)) => {
+                            log::error!("received unsupported packet");
+                        }
+                        Ok(Data(p)) => {
+                            log::trace!("{}: received {}", p.connection_id(), p);
+                            if p.sequence_number() == self.state.sequence_nr.load(SeqCst) {
+                                // This matches if the received packets matches the expected packet
+                                self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
+
+                                download_buffer.write_all(p.data()).unwrap();
+
+                                let send_buf = PacketBuf::Ack(AckPacket::new_buf(
+                                    receive_window as u16,
+                                    connection_id,
+                                    p.sequence_number() + 1,
+                                ));
+
+                                log::trace!("{}: sending {}", p.connection_id(), send_buf);
+                                self.state.socket
+                                    .read()
+                                    .unwrap()
+                                    .send(send_buf.buf()).unwrap();
+
+                                self.state.transferred_bytes.fetch_add(p.data().len() as u64, SeqCst);
+                            } else if p.sequence_number() > self.state.sequence_nr.load(SeqCst) {
+                                log::trace!("Received unexpected data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
+                                let packet = PacketBuf::Ack(AckPacket::new_buf(
+                                    receive_window as u16,
+                                    connection_id,
+                                    p.sequence_number() + 1,
+                                ));
+                                log::trace!("{}: sending {}", p.connection_id(), packet);
+                                self.state.socket.read().unwrap().send(packet.buf()).unwrap();
+                            }
+                        }
+                        Ok(Packet::Err(e)) => self.handle_error(e),
+                        _ => {}
                     }
                 }
-                Ok(Packet::Err(e)) => self.handle_error(e),
-                _ => {}
-            }
-            if self.ack_timeout.load(SeqCst).unwrap().elapsed()
-                > 3 * self.state.rtt.load(SeqCst).unwrap()
-            {
-                log::trace!(
-                    "Exceeded 3 * RTT, resending ACK [sequence_number: {:?}]",
-                    self.state.sequence_nr.load(SeqCst)
-                );
-                let send_buf = PacketBuf::Ack(AckPacket::new_buf(
-                    1,
-                    connection_id,
-                    self.state.sequence_nr.load(SeqCst),
-                ));
-                self.state.socket.send(send_buf.buf()).unwrap();
-                self.ack_timeout.store(Option::Some(Instant::now()), SeqCst);
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    // The ACK Retransmission Timeout is important for migration
+                    log::debug!("ACK Retransmission Timeout, resending ACK [sequence_number: {:?}]", self.state.sequence_nr.load(SeqCst));
+                    // Calculate current receive window
+                    receive_window = self.calculate_recv_window(&mut download_buffer);
+                    let send_buf = PacketBuf::Ack(AckPacket::new_buf(
+                        receive_window as u16,
+                        connection_id,
+                        self.state.sequence_nr.load(SeqCst),
+                    ));
+
+                    self.state.socket
+                        .read()
+                        .unwrap()
+                        .send(send_buf.buf()).unwrap();
+                }
+                Err(e) => {
+                    log::error!("unexpected error, caused by: {}", e);
+                }
             }
         }
-
         download_buffer
             .flush()
-            .expect("Error occurred when flushing writer");
+            .expect("Error occured when flushing writer");
+        return;
     }
 
     pub fn state(&self) -> ClientStateType {
@@ -479,5 +492,30 @@ impl Client {
 
     pub fn file_size(&self) -> u64 {
         return self.state.filesize.load(SeqCst);
+    }
+
+    pub fn migrate(&self) {
+        let server_address = self.state.socket.read().unwrap().peer_addr().unwrap();
+        let new_socket = UdpSocket::bind("0.0.0.0:0").unwrap();
+        log::debug!("Client migrating from {} to {}", self.state.socket.read().unwrap().local_addr().unwrap(), new_socket.local_addr().unwrap());
+        let mut lock = self.state.socket.write().expect("failed to get write lock");
+        lock.swap_socket(new_socket);
+        drop(lock);
+        self.state.socket.read().unwrap().connect(server_address).expect("Reconnection to server failed");
+        self.last_migration.store(Some(Instant::now()), SeqCst);
+        self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap())).unwrap();
+    }
+
+    fn calculate_recv_window(&self, download_buffer: &mut BufWriter<File>) -> usize{
+        let capacity = MB_1;
+        let receive_window: usize;
+        let bytes_buffered = download_buffer.buffer().len();
+        if capacity - bytes_buffered < MAX_PACKET_SIZE {
+            download_buffer.flush().expect("Unable to flush data from writer buffer");
+            receive_window = capacity / MAX_PACKET_SIZE;
+        } else {
+            receive_window = (capacity - bytes_buffered) / MAX_PACKET_SIZE;
+        }
+        return max(receive_window, RECEIVE_WINDOW_THRESH);
     }
 }

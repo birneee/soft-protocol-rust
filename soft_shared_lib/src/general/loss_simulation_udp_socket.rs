@@ -94,6 +94,8 @@ impl LossSimulationUdpSocket {
         self.inner.local_addr()
     }
 
+    pub fn peer_addr(&self) -> std::io::Result<SocketAddr> {self.inner.peer_addr()}
+
     pub fn try_clone(&self) -> std::io::Result<Self> {
         let socket = self.inner.try_clone()?;
 

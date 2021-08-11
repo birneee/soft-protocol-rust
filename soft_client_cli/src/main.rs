@@ -90,9 +90,22 @@ fn main() {
         .unwrap()
         .parse::<u16>()
         .expect("invalid port");
-    let filenames = matches.values_of("file").unwrap();
-    let mut p: f64 = matches.value_of("markovp").unwrap().parse().expect("invalid p argument");
-    let mut q: f64 = matches.value_of("markovq").unwrap().parse().expect("invalid q argument");
+    let filenames = matches
+        .values_of("file")
+        .unwrap();
+    let mut p: f64 = matches
+        .value_of("markovp")
+        .unwrap()
+        .parse()
+        .expect("invalid p argument");
+    let mut q: f64 = matches
+        .value_of("markovq")
+        .unwrap()
+        .parse()
+        .expect("invalid q argument");
+    let migration_interval: Option<Duration> = matches
+        .value_of("migrate")
+        .map(|str| Duration::from_millis(str.parse().expect("invalid m argument")));
 
     if matches.is_present("verbose") {
         env_logger::builder()
@@ -107,8 +120,6 @@ fn main() {
             .filter_level(LevelFilter::Info)
             .init();
     }
-
-    let migration_interval: Option<Duration> = matches.value_of("migrate").map(|str| Duration::from_millis(str.parse().expect("invalid m argument")));
 
     info!("Starting SOFT protocol client");
 
@@ -128,7 +139,7 @@ fn main() {
             continue;
         }
         let cloned_socket = socket.try_clone().expect("Unable to clone socket");
-        download_file(cloned_socket, filename);
+        download_file(cloned_socket, filename, migration_interval);
     }
 }
 
@@ -163,10 +174,11 @@ fn setup_udp_socket(ip: IpAddr, port: u16, p: f64, q: f64) -> LossSimulationUdpS
 }
 
 
-fn download_file(socket: LossSimulationUdpSocket, filename: &str) {
+fn download_file(socket: LossSimulationUdpSocket, filename: &str, migration: Option<Duration>) {
     let client = Arc::new(Client::init(
         socket,
         filename.to_string(),
+        migration,
     ));
     if client.state() == ClientStateType::Downloaded {
         return;
