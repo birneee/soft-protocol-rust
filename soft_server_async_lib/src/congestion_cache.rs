@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::time::{Duration};
 use soft_shared_lib::times::{path_cache_timeout, INITIAL_RTT};
 use std::sync::{Mutex};
-use log::debug;
+use log::{debug, trace};
 use ttl_cache::TtlCache;
 use crate::server::MAX_SIMULTANEOUS_CONNECTIONS;
 use std::cmp::max;
@@ -73,7 +73,7 @@ impl CongestionCache {
                     MIN_RTT
                 );
             }
-            debug!("updated rtt of {} to {:?}", addr, congestion_state.current_rtt);
+            trace!("updated rtt of {} to {:?}", addr, congestion_state.current_rtt);
         });
     }
 
@@ -103,12 +103,12 @@ impl CongestionCache {
                 value.congestion_window += CONGESTION_ALPHA;
                 // check if it has changed
                 if !value.is_slow_start() {
-                    debug!("enter congestion avoidance phase")
+                    debug!("{} enter congestion avoidance phase", addr);
                 }
             } else {
                 value.congestion_window += 1.0 / value.congestion_window;
             }
-            debug!("increased congestion window of {} to {}", addr, value.congestion_window);
+            trace!("increased congestion window of {} to {}", addr, value.congestion_window);
         });
     }
 
@@ -119,7 +119,7 @@ impl CongestionCache {
         self.update(addr, |value| {
             value.congestion_window = f64::max(value.congestion_window * CONGESTION_BETA, 1.0);
             value.congestion_avoidance_threshold = value.congestion_window;
-            debug!("decreased congestion window of {} to {}", addr, value.congestion_window);
+            trace!("decreased congestion window of {} to {}", addr, value.congestion_window);
         });
     }
 
@@ -131,8 +131,8 @@ impl CongestionCache {
             if !value.is_slow_start() {
                 value.congestion_avoidance_threshold = value.congestion_window * CONGESTION_BETA;
                 value.congestion_window = INITIAL_CONGESTION_WINDOW;
-                debug!("enter slow start phase");
-                debug!("reset congestion window of {} to {}", addr, value.congestion_window);
+                debug!("{} enter slow start phase", addr);
+                trace!("reset congestion window of {} to {}", addr, value.congestion_window);
             }
         });
     }

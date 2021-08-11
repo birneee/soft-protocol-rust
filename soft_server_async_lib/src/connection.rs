@@ -227,7 +227,7 @@ impl Connection {
         match compare_range(&expected_forward_acks, ack_next_sequence_number) {
             RangeCompare::LOWER => {
                 if ack_next_sequence_number == *(self.last_forward_acknowledgement.lock().await) as SequenceNumber {
-                    debug!("detected duplicate acks {}", ack_next_sequence_number);
+                    trace!("detected duplicate acks {}", ack_next_sequence_number);
                     if Instant::now() > *self.packet_loss_timeout.lock().await {
                         // handle packet lost
                         *self.packet_loss_timeout.lock().await = Instant::now() + times::packet_loss_timeout(self.rtt().await);
@@ -251,7 +251,7 @@ impl Connection {
                     // update rtt
                     let now = Instant::now();
                     let rtt_sample = now - (*data_send_instant_sample).1;
-                    debug!("measured {:?} rtt for connection {}", rtt_sample, self.connection_id);
+                    trace!("measured {:?} rtt for connection {}", rtt_sample, self.connection_id);
                     self.apply_rtt_sample(rtt_sample).await;
                 }
             }
