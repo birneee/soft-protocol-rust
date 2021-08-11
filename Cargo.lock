@@ -633,18 +633,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "soft_client_cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "env_logger",
- "log",
- "pbr",
- "soft_client_lib",
- "soft_shared_lib",
-]
-
-[[package]]
 name = "soft_client_lib"
 version = "0.1.0"
 dependencies = [
@@ -667,18 +655,6 @@ dependencies = [
  "test-case",
  "tokio",
  "ttl_cache",
-]
-
-[[package]]
-name = "soft_server_cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "env_logger",
- "log",
- "signal-hook",
- "soft_server_async_lib",
- "soft_shared_lib",
 ]
 
 [[package]]

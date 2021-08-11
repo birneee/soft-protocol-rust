@@ -275,7 +275,9 @@ impl Client {
                         self.clean_up();
                         // Reset checksum
                         self.state.checksum.store(None, SeqCst);
+                        self.state.sequence_nr.store(0, SeqCst);
                         self.state.file_changed.store(true, SeqCst);
+                        self.state.transferred_bytes.store(0, SeqCst);
                         return;
                     } else {
                         log::debug!("Partial file checksums are equal. Continuing download");
