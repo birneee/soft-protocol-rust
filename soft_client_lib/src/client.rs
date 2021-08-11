@@ -478,6 +478,9 @@ impl Client {
                     // Adapt RTT
                     self.check_timeout();
                 }
+                Err(e) => {
+                    log::error!("unexpected error, caused by: {}", e);
+                }
             }
         }
         download_buffer
