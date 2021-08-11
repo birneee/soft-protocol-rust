@@ -228,7 +228,7 @@ impl Connection {
         match compare_range(&expected_forward_acks, ack_next_sequence_number) {
             RangeCompare::LOWER => {
                 if ack_next_sequence_number == *(self.last_forward_acknowledgement.lock().await) as SequenceNumber {
-                    trace!("detected duplicate acks {}", ack_next_sequence_number);
+                    debug!("detected duplicate acks {}", ack_next_sequence_number);
                     if Instant::now() > *self.packet_loss_timeout.lock().await {
                         // handle packet lost
                         *self.packet_loss_timeout.lock().await = Instant::now() + times::packet_loss_timeout(self.rtt().await);
