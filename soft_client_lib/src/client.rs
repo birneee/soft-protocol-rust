@@ -522,7 +522,7 @@ impl Client {
             let old_rtt = self.state.current_rtt.load(SeqCst).unwrap();
             self.state.current_rtt.store(Some(2 * old_rtt), SeqCst);
             log::debug!("Updated RTT to {:?}", self.state.current_rtt.load(SeqCst).unwrap());
-            let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.current_rtt.load(SeqCst).unwrap()));
+            self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.current_rtt.load(SeqCst).unwrap())).unwrap();
             self.consecutive_timeouts_counter.store(new_timeout_value, SeqCst);
             return true;
         }
