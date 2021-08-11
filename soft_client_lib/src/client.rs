@@ -184,7 +184,7 @@ impl Client {
                 );
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::ChecksumNotReady => {
-                log::debug!("Checksum Not Ready, retrying download of {} in 5 seconds", self.filename);
+                log::info!("Checksum Not Ready, retrying download of {} in 5 seconds", self.filename);
                 thread::sleep(Duration::from_secs(5));
                 self.run();
             }
