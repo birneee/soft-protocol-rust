@@ -403,7 +403,8 @@ impl Client {
                             Some(max(self.initial_ack.load(SeqCst).unwrap().elapsed(), Duration::from_millis(1))),
                             SeqCst,
                         );
-                        let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.current_rtt.load(SeqCst).unwrap()));
+                        self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.current_rtt.load(SeqCst).unwrap())).unwrap();
+
                         self.state.initial_rtt.store(self.state.current_rtt.load(SeqCst), SeqCst);
                         log::debug!("Initial RTT measurement: {:?}", self.state.current_rtt.load(SeqCst).unwrap());
                     }
