@@ -460,7 +460,7 @@ impl Client {
                         _ => {}
                     }
                 }
-                Err(_) => {
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
                     log::trace!("Exceeded 3 * RTT, resending ACK [sequence_number: {:?}]", self.state.sequence_nr.load(SeqCst));
                     // Calculate current receive window
                     receive_window = self.calculate_recv_window(&mut download_buffer);
