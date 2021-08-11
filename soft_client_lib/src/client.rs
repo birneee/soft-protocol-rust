@@ -67,7 +67,7 @@ impl Client {
                 state.checksum.store(Some(checksum), SeqCst);
                 state.transferred_bytes.store(current_file_size, SeqCst);
             } else {
-                log::error!("File already present");
+                log::info!("File already present");
                 state.state_type.store(ClientStateType::Downloaded, SeqCst);
             }
         }
@@ -184,7 +184,7 @@ impl Client {
                 );
             }
             soft_shared_lib::soft_error_code::SoftErrorCode::ChecksumNotReady => {
-                log::error!("Checksum Not Ready, retrying download of {} in 5 seconds", self.filename);
+                log::debug!("Checksum Not Ready, retrying download of {} in 5 seconds", self.filename);
                 thread::sleep(Duration::from_secs(5));
                 self.run();
             }
@@ -268,7 +268,7 @@ impl Client {
                 log::trace!("{}: received {}", self.state.connection_id.load(SeqCst), p);
                 if let Some(checksum) = self.state.checksum.load(SeqCst) {
                     if p.checksum() != checksum {
-                        log::debug!(
+                        log::info!(
                             "File changed, re-handshaking to downloading latest file. {}",
                             self.filename
                         );
@@ -354,7 +354,7 @@ impl Client {
                 .state_type
                 .store(ClientStateType::Downloaded, SeqCst);
         } else {
-            log::error!("Checksum not matching, File might have changed, redownload to get the latest version!");
+            log::error!("Checksum not matching, File might have changed, re-download to get the latest version!");
             self.state.state_type.store(ClientStateType::Error, SeqCst);
         }
     }
