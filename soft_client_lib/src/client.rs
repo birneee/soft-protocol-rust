@@ -33,7 +33,6 @@ pub struct Client {
     migration: Option<Duration>,
     initial_ack: Atomic<Option<Instant>>,
     last_migration: Atomic<Option<Instant>>,
-    consecutive_timeouts_counter: Atomic<u8>
 }
 
 impl Client {
@@ -79,7 +78,6 @@ impl Client {
             migration,
             initial_ack: Atomic::new(None),
             last_migration: Atomic::new(None),
-            consecutive_timeouts_counter: Atomic::new(0)
         }
     }
 
@@ -399,13 +397,12 @@ impl Client {
                 Ok(packet_size) => {
                     // Store rtt measurement on the socket and set socket timeout
                     if self.state.sequence_nr.load(SeqCst) == 0 {
-                        self.state.current_rtt.store(
+                        self.state.rtt.store(
                             Some(max(self.initial_ack.load(SeqCst).unwrap().elapsed(), Duration::from_millis(1))),
                             SeqCst,
                         );
-                        let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.current_rtt.load(SeqCst).unwrap()));
-                        self.state.initial_rtt.store(self.state.current_rtt.load(SeqCst), SeqCst);
-                        log::debug!("Initial RTT measurement: {:?}", self.state.current_rtt.load(SeqCst).unwrap());
+                        self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap())).unwrap();
+                        log::debug!("Initial RTT measurement: {:?}", self.state.rtt.load(SeqCst).unwrap());
                     }
 
                     if !self.migration.is_none() && self.last_migration.load(SeqCst).unwrap().elapsed() > self.migration.unwrap() {
@@ -425,14 +422,6 @@ impl Client {
                             log::trace!("{}: received {}", p.connection_id(), p);
                             if p.sequence_number() == self.state.sequence_nr.load(SeqCst) {
                                 // This matches if the received packets matches the expected packet
-                                // Receiving an expected packet resets the rtt to the initial value
-                                if self.consecutive_timeouts_counter.load(SeqCst) >= 3 {
-                                    log::debug!("Reset RTT from {:?} to {:?}", self.state.current_rtt.load(SeqCst).unwrap(), self.state.initial_rtt.load(SeqCst).unwrap());
-                                    self.state.current_rtt.store(self.state.initial_rtt.load(SeqCst), SeqCst);
-                                    self.consecutive_timeouts_counter.store(0, SeqCst);
-                                } else {
-                                    self.consecutive_timeouts_counter.store(0, SeqCst);
-                                }
                                 self.state.sequence_nr.store(p.sequence_number() + 1, SeqCst);
 
                                 let _ = download_buffer.write_all(p.data()).unwrap();
@@ -451,15 +440,22 @@ impl Client {
 
                                 progress = progress + p.data().len() as u64;
                                 self.state.transferred_bytes.store(progress, SeqCst);
-                            } else {
+                            } else if p.sequence_number() > self.state.sequence_nr.load(SeqCst) {
                                 log::trace!("Received unexpected data packet: Expected {:?}, Got: {:?}", self.state.sequence_nr.load(SeqCst), p.sequence_number());
+                                let packet = PacketBuf::Ack(AckPacket::new_buf(
+                                    receive_window as u16,
+                                    connection_id,
+                                    p.sequence_number() + 1,
+                                ));
+                                log::trace!("{}: sending {}", p.connection_id(), packet);
+                                self.state.socket.read().unwrap().send(packet.buf()).unwrap();
                             }
                         }
                         Ok(Packet::Err(e)) => self.handle_error(e),
                         _ => {}
                     }
                 }
-                Err(_) => {
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
                     log::trace!("Exceeded 3 * RTT, resending ACK [sequence_number: {:?}]", self.state.sequence_nr.load(SeqCst));
                     // Calculate current receive window
                     receive_window = self.calculate_recv_window(&mut download_buffer);
@@ -469,13 +465,10 @@ impl Client {
                         self.state.sequence_nr.load(SeqCst),
                     ));
 
-                    let _ = self.state.socket
+                    self.state.socket
                         .read()
                         .unwrap()
-                        .send(send_buf.buf());
-
-                    // Adapt RTT
-                    self.check_timeout();
+                        .send(send_buf.buf()).unwrap();
                 }
             }
         }
@@ -507,23 +500,7 @@ impl Client {
         drop(lock);
         self.state.socket.read().unwrap().connect(server_address).expect("Reconnection to server failed");
         self.last_migration.store(Some(Instant::now()), SeqCst);
-        let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.current_rtt.load(SeqCst).unwrap()));
-    }
-
-    fn check_timeout(&self) -> bool {
-        let old_timeout_value = self.consecutive_timeouts_counter.load(SeqCst);
-        let new_timeout_value = old_timeout_value + 1;
-
-        if new_timeout_value > 0 && new_timeout_value % 3 == 0 {
-            let old_rtt = self.state.current_rtt.load(SeqCst).unwrap();
-            self.state.current_rtt.store(Some(2 * old_rtt), SeqCst);
-            log::debug!("Updated RTT to {:?}", self.state.current_rtt.load(SeqCst).unwrap());
-            let _ = self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.current_rtt.load(SeqCst).unwrap()));
-            self.consecutive_timeouts_counter.store(new_timeout_value, SeqCst);
-            return true;
-        }
-        self.consecutive_timeouts_counter.store(new_timeout_value, SeqCst);
-        return false;
+        self.state.socket.read().unwrap().set_read_timeout(Some(3 * self.state.rtt.load(SeqCst).unwrap())).unwrap();
     }
 
     fn calculate_recv_window(&self, download_buffer: &mut BufWriter<File>) -> usize{
