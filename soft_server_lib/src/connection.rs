@@ -6,7 +6,7 @@ use soft_shared_lib::packet::acc_packet::AccPacket;
 use soft_shared_lib::field_types::{ConnectionId, SequenceNumber, MaxPacketSize};
 use soft_shared_lib::general::byte_view::ByteView;
 use tokio::io::{BufReader, AsyncSeekExt, SeekFrom, AsyncReadExt};
-use crate::congestion_cache::{CongestionCache, CongestionWindow};
+use crate::path_cache::{PathCache, CongestionWindow};
 use crate::checksum_cache::ChecksumCache;
 use tokio::task::JoinHandle;
 use soft_shared_lib::{error, times};
@@ -53,7 +53,7 @@ pub struct Connection {
     pub connection_id: ConnectionId,
     pub socket: Arc<LossSimulationUdpSocket>,
     pub packet_sender: Sender<(PacketBuf, SocketAddr)>,
-    congestion_cache: Arc<CongestionCache>,
+    path_cache: Arc<PathCache>,
     connection_timeout: Mutex<Instant>,
     client_addr: Mutex<SocketAddr>,
     /// -1 if no ACK packet has been received yet
@@ -85,7 +85,7 @@ impl Connection {
     /// received packets have to be passed to the packet_sender channel
     ///
     /// fails if request is invalid or file is not found
-    pub async fn new(connection_id: ConnectionId, req: &ReqPacket, src_addr: SocketAddr, socket: Arc<LossSimulationUdpSocket>, congestion_cache: Arc<CongestionCache>, checksum_cache: Arc<ChecksumCache>, file_sandbox: &FileSandbox) -> error::Result<Arc<Connection>> {
+    pub async fn new(connection_id: ConnectionId, req: &ReqPacket, src_addr: SocketAddr, socket: Arc<LossSimulationUdpSocket>, congestion_cache: Arc<PathCache>, checksum_cache: Arc<ChecksumCache>, file_sandbox: &FileSandbox) -> error::Result<Arc<Connection>> {
         let (packet_sender, packet_receiver) = tokio::sync::mpsc::channel(PACKET_CHANNEL_SIZE);
 
         let file = match file_sandbox.get_file(req.file_name()).await {
@@ -135,7 +135,7 @@ impl Connection {
             connection_id,
             socket,
             packet_sender,
-            congestion_cache,
+            path_cache: congestion_cache,
             connection_timeout: Mutex::new(Instant::now() + connection_timeout(INITIAL_RTT)),
             client_addr: Mutex::new(src_addr),
             last_forward_acknowledgement: Mutex::new(-1),
@@ -360,21 +360,21 @@ impl Connection {
     /// only increase when congestion_window is smaller than receive_window
     async fn increase_congestion_window(&self) {
         let client_addr = *self.client_addr.lock().await;
-        if self.congestion_cache.congestion_window(client_addr) < self.client_receive_window.load(SeqCst) {
-            self.congestion_cache.increase_congestion_window(client_addr);
+        if self.path_cache.congestion_window(client_addr) < self.client_receive_window.load(SeqCst) {
+            self.path_cache.increase_congestion_window(client_addr);
         }
     }
 
     async fn decrease_congestion_window(&self) {
-        self.congestion_cache.decrease_congestion_window(*self.client_addr.lock().await);
+        self.path_cache.decrease_congestion_window(*self.client_addr.lock().await);
     }
 
     async fn reset_congestion_window(&self) {
-        self.congestion_cache.reset_congestion_window(*self.client_addr.lock().await);
+        self.path_cache.reset_congestion_window(*self.client_addr.lock().await);
     }
 
     pub async fn rtt(&self) -> Duration{
-        self.congestion_cache.current_rtt(*self.client_addr.lock().await)
+        self.path_cache.current_rtt(*self.client_addr.lock().await)
     }
 
     /// true if all bytes have been read from the file
@@ -391,7 +391,7 @@ impl Connection {
     }
 
     async fn congestion_window(&self) -> CongestionWindow {
-        return self.congestion_cache.congestion_window(*self.client_addr.lock().await);
+        return self.path_cache.congestion_window(*self.client_addr.lock().await);
     }
 
     pub async fn max_window(&self) -> u16 {
@@ -407,7 +407,7 @@ impl Connection {
     }
 
     async fn apply_rtt_sample(&self, rtt_sample: Duration) {
-        self.congestion_cache.apply_rtt_sample(*self.client_addr.lock().await, rtt_sample);
+        self.path_cache.apply_rtt_sample(*self.client_addr.lock().await, rtt_sample);
     }
 
     /// true if connection is no longer active
