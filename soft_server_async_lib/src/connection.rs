@@ -252,7 +252,7 @@ impl Connection {
                     // update rtt
                     let now = Instant::now();
                     let rtt_sample = now - (*data_send_instant_sample).1;
-                    debug!("measured {:?} rtt for connection {}", rtt_sample, self.connection_id);
+                    trace!("measured {:?} rtt for connection {}", rtt_sample, self.connection_id);
                     self.apply_rtt_sample(rtt_sample).await;
                 }
             }
