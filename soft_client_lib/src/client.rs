@@ -278,6 +278,8 @@ impl Client {
                         self.state.sequence_nr.store(0, SeqCst);
                         self.state.file_changed.store(true, SeqCst);
                         self.state.transferred_bytes.store(0, SeqCst);
+                        // Delete old file
+                        fs::remove_file(&self.filename).expect("delete failed");
                         return;
                     } else {
                         log::debug!("Partial file checksums are equal. Continuing download");
