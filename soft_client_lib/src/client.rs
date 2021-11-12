@@ -34,6 +34,7 @@ pub struct Client {
     migration: Option<Duration>,
     initial_ack: Atomic<Option<Instant>>,
     last_migration: Atomic<Option<Instant>>,
+    timeout: Atomic<Option<Instant>>,
 }
 
 impl Client {
@@ -79,6 +80,7 @@ impl Client {
             migration,
             initial_ack: Atomic::new(None),
             last_migration: Atomic::new(None),
+            timeout: Atomic::new(None),
         }
     }
 
@@ -132,6 +134,7 @@ impl Client {
         if self.state.state_type.load(SeqCst) == ClientStateType::Stopped {
             return;
         }
+
         self.handshake();
 
         self.do_file_transfer();
@@ -238,6 +241,7 @@ impl Client {
             .send(send_buf.buf())
             .expect("couldn't send message");
 
+        self.state.socket.read().unwrap().set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         match self.state.socket.read().unwrap().recv(&mut recv_buf) {
             Ok(_) => (),
             Err(e) if e.kind() == ErrorKind::WouldBlock => {
@@ -387,10 +391,17 @@ impl Client {
         let mut recv_buf = [0; MAX_PACKET_SIZE];
         let file_size = self.state.filesize.load(SeqCst);
         let connection_id = self.state.connection_id.load(SeqCst);
+        self.timeout.store(Some(Instant::now()), SeqCst);
 
         while self.state.transferred_bytes.load(SeqCst) != file_size
             && self.state.state_type.load(SeqCst) == ClientStateType::Downloading
         {
+            //Check global timer
+            if !(self.timeout.load(SeqCst).unwrap().elapsed() < max(Duration::from_secs(5), self.state.rtt.load(SeqCst).unwrap())) {
+                log::error!("Server timed out");
+                self.state.state_type.store(ClientStateType::Error, SeqCst);
+                return
+            }
             // Reader has a timeout set at various points
             let packet_size = self.state.socket
                 .read()
@@ -399,6 +410,7 @@ impl Client {
 
             match packet_size {
                 Ok(packet_size) => {
+                    self.timeout.store(Some(Instant::now()), SeqCst);
                     // Store rtt measurement on the socket and set socket timeout
                     if self.state.sequence_nr.load(SeqCst) == 0 {
                         self.state.rtt.store(
